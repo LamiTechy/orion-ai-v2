@@ -26,53 +26,45 @@ function addCopyButtons(el) {
   if (window.hljs) el.querySelectorAll('pre code').forEach(el => window.hljs.highlightElement(el))
 }
 
-// ── Parse code blocks from markdown content ───────────────────────────────
-// Extracts ```lang\nfilename\ncontent``` or ```lang filename\ncontent``` blocks
+// ── Parse code blocks from markdown ─────────────────────────────────────────
 function parseCodeFiles(content) {
   const files = []
-  // Match: ```lang path/to/file.ext\n...content...``` 
-  // or a comment like // filename.ext on first line
   const blockRegex = /```(\w+)(?:\s+([^\n]+))?\n([\s\S]*?)```/g
   let match
   while ((match = blockRegex.exec(content)) !== null) {
     const lang = match[1]
-    const hint = match[2]?.trim()  // optional filename hint after lang
+    const hint = match[2]?.trim()
     const code = match[3]
-
-    // Try to determine filename
     let filename = null
-
-    // 1. Explicit hint after lang tag: ```typescript src/App.tsx
-    if (hint && hint.includes('.')) {
-      filename = hint
-    }
-    // 2. First line comment: // path/to/file.ext  or # file.ext
+    // 1. Path after lang tag with no spaces: ```tsx src/App.tsx
+    if (hint && /[.\/]/.test(hint) && !hint.includes(' ')) filename = hint
+    // 2. First-line comment exactly matching a filepath: // src/App.tsx
     else {
       const firstLine = code.split('\n')[0].trim()
-      const commentMatch = firstLine.match(/^(?:\/\/|#|<!--|--)\s*([\w./-]+\.\w+)/)
-      if (commentMatch) filename = commentMatch[1]
+      const m = firstLine.match(/^(?:\/\/|#|<!--|--|;)\s*([\w][\w.\-\/]*\.\w+)\s*$/)
+      if (m) filename = m[1]
     }
-
-    // 3. Fallback: derive from lang
-    if (!filename) {
-      const langExt = { javascript:'index.js', typescript:'index.ts', jsx:'App.jsx', tsx:'App.tsx',
-        python:'main.py', go:'main.go', rust:'main.rs', html:'index.html', css:'styles.css',
-        sql:'query.sql', bash:'script.sh', sh:'script.sh', json:'config.json', yaml:'config.yaml',
-        markdown:'README.md', dockerfile:'Dockerfile' }
-      filename = langExt[lang.toLowerCase()] || `file.${lang}`
-    }
-
+    // null path = unnamed snippet — tracked but excluded from ZIP
     files.push({ path: filename, content: code.trimEnd(), lang })
   }
   return files
 }
 
-function hasMultipleFiles(files) {
-  // Only offer ZIP if 2+ distinct files or 1 file that looks like a full project
-  if (files.length >= 2) return true
-  if (files.length === 1 && files[0].content.length > 200) return false // single file — no ZIP needed
-  return false
+// Show ZIP only when 2+ blocks have EXPLICIT filenames Orion intentionally set.
+// Single snippets, before/after pairs, and examples never trigger it.
+function shouldShowZip(files) {
+  const named = files.filter(f => f.path !== null)
+  if (named.length < 2) return false
+  const paths = new Set(named.map(f => f.path))
+  if (paths.size < 2) return false
+  // Skip if only 2 files with same extension and both are short (before/after pattern)
+  const exts = new Set(named.map(f => f.path.split('.').pop()))
+  if (exts.size === 1 && named.length === 2) {
+    if (named.every(f => f.content.split('\n').length < 20)) return false
+  }
+  return true
 }
+
 
 // ── ZIP Download button ───────────────────────────────────────────────────
 function ZipButton({ files, projectName }) {
@@ -215,14 +207,17 @@ export default function MessageBubble({ role, content, streaming }) {
   const codeFiles = (!streaming && isAI && !imageMatch && !storedImgMatch && typeof content === 'string')
     ? parseCodeFiles(content)
     : []
-  const showZip = codeFiles.length >= 2
+  const showZip = shouldShowZip(codeFiles)
 
   // Derive a project name from the first filename found
   const projectName = (() => {
-    if (!codeFiles.length) return 'orion-project'
-    const first = codeFiles[0].path
-    const parts = first.split('/')
-    return parts.length > 1 ? parts[0] : 'orion-project'
+    const named = codeFiles.filter(f => f.path !== null)
+    if (!named.length) return 'orion-project'
+    // If files share a common root folder, use that as project name
+    const parts = named[0].path.split('/')
+    if (parts.length > 1) return parts[0]
+    // Otherwise derive from conversation context — use a generic name
+    return 'orion-project'
   })()
 
   useEffect(() => {
@@ -290,7 +285,7 @@ export default function MessageBubble({ role, content, streaming }) {
       <div style={{ ...bubbleStyle, padding: showZip ? '11px 15px 15px' : '11px 15px' }} className="bubble" ref={bubbleRef}>
         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
         {showZip && (
-          <ZipButton files={codeFiles} projectName={projectName} />
+          <ZipButton files={codeFiles.filter(f => f.path !== null)} projectName={projectName} />
         )}
       </div>
     </div>
