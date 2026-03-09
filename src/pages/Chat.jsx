@@ -149,6 +149,12 @@ const CSS = `
     border-color: rgba(0,122,255,0.35);
     box-shadow: 0 0 0 4px rgba(0,122,255,0.07), 0 4px 20px rgba(100,120,180,0.1);
   }
+  .input-box.locked {
+    opacity: 0.55;
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+  .input-textarea:disabled { cursor: not-allowed; }
   .input-textarea {
     flex:1; background:none; border:none; outline:none;
     color:#1a1d23; font-family:'DM Sans',sans-serif; font-size:0.92rem;
@@ -358,12 +364,26 @@ export default function Chat() {
   }
 
   function resetTypewriter() {
+    // Stop the animation loop immediately
     if (typeTimerRef.current) {
       cancelAnimationFrame(typeTimerRef.current)
       typeTimerRef.current = null
     }
+    // Snap previous message to fully complete — combine displayed + remaining queue
+    const remaining = typeQueueRef.current.join('')
+    const final = typeDisplayRef.current + remaining
+    if (final) {
+      setMessages(prev => {
+        const n = [...prev]
+        if (n.length > 0 && n[n.length - 1].streaming) {
+          n[n.length - 1] = { role: 'assistant', content: final, streaming: false }
+        }
+        return n
+      })
+    }
+    // Clear ALL state — must happen AFTER the flush above
     typeQueueRef.current = []
-    typeDisplayRef.current = ''
+    typeDisplayRef.current = ''  // ← this is the critical one that was leaking
     typeDoneRef.current = false
   }
 
@@ -498,6 +518,7 @@ export default function Chat() {
       } catch {}
     }
 
+    resetTypewriter()  // flush any previous response instantly
     setIsStreaming(true); setInput('')
     setMessages(prev => [...prev, { role: 'user', content: uploadedFile ? `📎 ${uploadedFile.name}\n${text}` : text }])
     setStatus('Thinking…'); setStatusLoading(true)
@@ -674,19 +695,20 @@ export default function Chat() {
                 <button className="file-chip-remove" onClick={removeFile}>×</button>
               </div>
             )}
-            <div className="input-box">
+            <div className={`input-box${isStreaming ? " locked" : ""}`}>
               <textarea
                 ref={textareaRef}
                 className="input-textarea"
                 value={input}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
-                placeholder={isImageFile && imageUrl ? "Describe how to edit this image…" : "Message Orion…"}
+                placeholder={isStreaming ? "Orion is responding…" : isImageFile && imageUrl ? "Describe how to edit this image…" : "Message Orion…"}
+                disabled={isStreaming}
                 rows={1}
               />
               <div className="input-actions">
                 <input type="file" ref={fileInputRef} style={{display:'none'}} onChange={handleFileChange} accept="image/*,.pdf,.zip,.js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.md,.txt,.html,.css,.json,.yaml,.yml,.sh,.sql,.csv,.env,.toml" />
-                <button className="icon-btn" onClick={()=>fileInputRef.current?.click()} title="Attach file">
+                <button className="icon-btn" onClick={()=>!isStreaming&&fileInputRef.current?.click()} disabled={isStreaming} title="Attach file">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
                   </svg>
