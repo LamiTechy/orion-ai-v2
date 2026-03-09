@@ -9,7 +9,7 @@ const CSS = `
   .chat-app {
     display:flex;
     height: 100vh;
-    height: 100dvh;        /* dynamic — shrinks when Android keyboard opens */
+    height: 100dvh;
     overflow: hidden;
     position: relative;
     z-index: 1;
@@ -60,10 +60,9 @@ const CSS = `
   .empty-sidebar { padding:32px 16px; text-align:center; color:#b0bac8; font-size:0.82rem; }
 
   .sidebar-footer {
-    padding:14px 16px;
     border-top: 1px solid rgba(255,255,255,0.6);
   }
-  .user-row { display:flex; align-items:center; gap:10px; }
+  .user-row { display:flex; align-items:center; gap:10px; padding:14px 16px; }
   .user-av {
     width:34px; height:34px; border-radius:50%; flex-shrink:0;
     background: linear-gradient(135deg, #007AFF, #5856d6);
@@ -150,11 +149,7 @@ const CSS = `
     border-color: rgba(0,122,255,0.35);
     box-shadow: 0 0 0 4px rgba(0,122,255,0.07), 0 4px 20px rgba(100,120,180,0.1);
   }
-  .input-box.locked {
-    opacity: 0.55;
-    pointer-events: none;
-    cursor: not-allowed;
-  }
+  .input-box.locked { opacity: 0.55; pointer-events: none; cursor: not-allowed; }
   .input-textarea:disabled { cursor: not-allowed; }
   .input-textarea {
     flex:1; background:none; border:none; outline:none;
@@ -168,14 +163,10 @@ const CSS = `
     width:34px; height:34px; border-radius:50%; border:none;
     background: transparent; color:#a0aab8;
     display:flex; align-items:center; justify-content:center;
-    cursor:pointer; transition:all 0.18s; flex-shrink:0;
-    padding:0;
+    cursor:pointer; transition:all 0.18s; flex-shrink:0; padding:0;
   }
   .icon-btn:hover { background:rgba(0,0,0,0.06); color:#4a5568; }
-  .icon-btn.listening {
-    background:rgba(255,59,48,0.08); color:#ff3b30;
-    animation:micPulse 1s infinite;
-  }
+  .icon-btn.listening { background:rgba(255,59,48,0.08); color:#ff3b30; animation:micPulse 1s infinite; }
   .icon-btn svg { display:block; }
   .send-btn {
     width:38px; height:38px; border-radius:12px; border:none;
@@ -193,82 +184,22 @@ const CSS = `
   .status-dot.loading { background:#007AFF; animation:pulse 1s infinite; }
   .status-text { font-size:0.72rem; color:#b0bac8; }
 
-  /* ── Mobile — keyboard-proof layout ── */
+  /* ── Mobile ── */
   @media (max-width:768px) {
-    /*
-      KEY INSIGHT: We do NOT use position:fixed on .main or .chat-header.
-      Instead the whole .chat-app is a flex column that fills 100dvh.
-      When Android keyboard opens, 100dvh shrinks → .chat-area (flex:1) shrinks
-      → header and input bar stay visible because they are flex-shrink:0.
-    */
-    .chat-app {
-      flex-direction: column;
-      height: 100vh;
-      height: 100dvh;
-    }
-
-    /* Sidebar stays as a fixed overlay */
+    .chat-app { flex-direction: column; height: 100vh; height: 100dvh; }
     .sidebar {
-      position: fixed;
-      left: 0; top: 0;
-      width: 280px;
-      height: 100vh; height: 100dvh;
-      z-index: 1000;
-      transform: translateX(-100%);
-      transition: transform 0.28s ease;
+      position: fixed; left: 0; top: 0;
+      width: 280px; height: 100vh; height: 100dvh;
+      z-index: 1000; transform: translateX(-100%); transition: transform 0.28s ease;
     }
     .sidebar.open { transform: translateX(0); box-shadow: 4px 0 32px rgba(0,0,0,0.18); }
     .hamburger { display: block; }
-    .overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.25); backdrop-filter: blur(2px); z-index: 999;
-    }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.25); backdrop-filter: blur(2px); z-index: 999; }
     .overlay.open { display: block; }
-
-    /* Main is a normal flex column child — NOT fixed */
-    .main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;   /* lets it shrink below its content size */
-      overflow: hidden;
-      width: 100%;
-    }
-
-    /* Header — flex-shrink:0 keeps it always visible */
-    .chat-header {
-      flex-shrink: 0;
-      padding: 10px 14px;
-      min-height: 52px;
-      background: rgba(255,255,255,0.97);
-      backdrop-filter: blur(20px) saturate(200%);
-      -webkit-backdrop-filter: blur(20px) saturate(200%);
-      border-bottom: 1px solid rgba(0,0,0,0.08);
-      z-index: 10;
-    }
-
-    /* Chat area — the ONLY thing that shrinks and scrolls */
-    .chat-area {
-      flex: 1;
-      min-height: 0;   /* critical — without this flex won't shrink it */
-      overflow-y: auto;
-      overflow-x: hidden;
-      padding: 12px 12px 8px;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-    }
-
-    /* Input bar — flex-shrink:0 keeps it always visible at the bottom */
-    .input-area {
-      flex-shrink: 0;
-      padding: 8px 12px;
-      padding-bottom: max(10px, env(safe-area-inset-bottom));
-      background: rgba(255,255,255,0.97);
-      backdrop-filter: blur(20px) saturate(200%);
-      -webkit-backdrop-filter: blur(20px) saturate(200%);
-      border-top: 1px solid rgba(0,0,0,0.08);
-    }
-
+    .main { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; width: 100%; }
+    .chat-header { flex-shrink: 0; padding: 10px 14px; min-height: 52px; background: rgba(255,255,255,0.97); backdrop-filter: blur(20px) saturate(200%); -webkit-backdrop-filter: blur(20px) saturate(200%); border-bottom: 1px solid rgba(0,0,0,0.08); z-index: 10; }
+    .chat-area { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 12px 12px 8px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+    .input-area { flex-shrink: 0; padding: 8px 12px; padding-bottom: max(10px, env(safe-area-inset-bottom)); background: rgba(255,255,255,0.97); backdrop-filter: blur(20px) saturate(200%); -webkit-backdrop-filter: blur(20px) saturate(200%); border-top: 1px solid rgba(0,0,0,0.08); }
     .input-box { border-radius: 24px; padding: 8px 8px 8px 14px; }
     .input-textarea { font-size: 1rem; }
     .send-btn { width: 40px; height: 40px; border-radius: 50%; }
@@ -282,49 +213,41 @@ export default function Chat() {
   const { user, signOut } = useAuth()
   const { conversations, load, create, remove, updateTitle, getMessages, saveMessage } = useConversations(user?.id)
 
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages]           = useState([])
   const [conversationId, setConversationId] = useState(null)
-  const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [status, setStatus] = useState('Ready')
+  const [input, setInput]                 = useState('')
+  const [isStreaming, setIsStreaming]     = useState(false)
+  const [status, setStatus]               = useState('Ready')
   const [statusLoading, setStatusLoading] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen]     = useState(false)
+  const [uploadedFile, setUploadedFile]   = useState(null)
+  const [fileContent, setFileContent]     = useState(null)
+  const [isImageFile, setIsImageFile]     = useState(false)
+  const [imageUrl, setImageUrl]           = useState(null)
+  const [isListening, setIsListening]     = useState(false)
+  const [callActive, setCallActive]       = useState(false)
+  const [githubUser, setGithubUser]       = useState(null)
+  const [githubLoading, setGithubLoading] = useState(false)
 
-  const [uploadedFile, setUploadedFile] = useState(null)
-  const [fileContent, setFileContent] = useState(null)
-  const [isImageFile, setIsImageFile] = useState(false)
-  const [imageUrl, setImageUrl] = useState(null)
-  const [isListening, setIsListening] = useState(false)
-  const [callActive, setCallActive] = useState(false)
-
-  const recognitionRef = useRef(null)
-  const chatAreaRef = useRef(null)
-  const textareaRef = useRef(null)
-  const fileInputRef = useRef(null)
-
-  // Typewriter queue — chunks arrive fast from the stream,
-  // we drain them at a natural reading pace like Claude/ChatGPT
-  const typeQueueRef = useRef([])     // pending characters to render
-  const typeTimerRef = useRef(null)   // requestAnimationFrame id
-  const typeDisplayRef = useRef('')   // what's currently shown on screen
-  const typeDoneRef = useRef(false)   // true when stream has finished sending
+  const recognitionRef  = useRef(null)
+  const chatAreaRef     = useRef(null)
+  const textareaRef     = useRef(null)
+  const fileInputRef    = useRef(null)
+  const typeQueueRef    = useRef([])
+  const typeTimerRef    = useRef(null)
+  const typeDisplayRef  = useRef('')
+  const typeDoneRef     = useRef(false)
 
   function startTypewriter() {
-    if (typeTimerRef.current) return // already running
-
-    const TARGET_CPS = 55  // characters per second — fast enough for markdown to render cleanly
-
+    if (typeTimerRef.current) return
+    const TARGET_CPS = 55
     let lastTime = null
     let charBudget = 0
-
     function tick(now) {
       if (!lastTime) lastTime = now
       const elapsed = now - lastTime
       lastTime = now
-
       charBudget += (elapsed / 1000) * TARGET_CPS
-
-      // Drain up to charBudget characters from the queue this frame
       const queue = typeQueueRef.current
       let rendered = 0
       while (queue.length > 0 && charBudget >= 1) {
@@ -332,7 +255,6 @@ export default function Chat() {
         charBudget -= 1
         rendered++
       }
-
       if (rendered > 0) {
         const text = typeDisplayRef.current
         setMessages(prev => {
@@ -341,13 +263,9 @@ export default function Chat() {
           return n
         })
       }
-
-      // Keep animating if there's more in the queue,
-      // or if stream isn't done yet (more chunks coming)
       if (queue.length > 0 || !typeDoneRef.current) {
         typeTimerRef.current = requestAnimationFrame(tick)
       } else {
-        // Stream done AND queue empty — finalize
         typeTimerRef.current = null
         const final = typeDisplayRef.current
         setMessages(prev => {
@@ -361,35 +279,26 @@ export default function Chat() {
         removeFile()
       }
     }
-
     typeTimerRef.current = requestAnimationFrame(tick)
   }
 
   function resetTypewriter() {
-    // Stop the animation loop immediately
-    if (typeTimerRef.current) {
-      cancelAnimationFrame(typeTimerRef.current)
-      typeTimerRef.current = null
-    }
-    // Snap previous message to fully complete — combine displayed + remaining queue
+    if (typeTimerRef.current) { cancelAnimationFrame(typeTimerRef.current); typeTimerRef.current = null }
     const remaining = typeQueueRef.current.join('')
     const final = typeDisplayRef.current + remaining
     if (final) {
       setMessages(prev => {
         const n = [...prev]
-        if (n.length > 0 && n[n.length - 1].streaming) {
-          n[n.length - 1] = { role: 'assistant', content: final, streaming: false }
-        }
+        if (n.length > 0 && n[n.length - 1].streaming) n[n.length - 1] = { role: 'assistant', content: final, streaming: false }
         return n
       })
     }
-    // Clear ALL state — must happen AFTER the flush above
     typeQueueRef.current = []
-    typeDisplayRef.current = ''  // ← this is the critical one that was leaking
+    typeDisplayRef.current = ''
     typeDoneRef.current = false
   }
 
-  // Load conversations then restore last active one from localStorage
+  // Init: load conversations + restore last active
   useEffect(() => {
     async function init() {
       await load()
@@ -400,16 +309,51 @@ export default function Chat() {
           if (msgs && msgs.length > 0) {
             setConversationId(savedId)
             setMessages(msgs.map(m => ({ role: m.role, content: m.content })))
-          } else {
-            localStorage.removeItem('orion_last_conv')
-          }
-        } catch {
-          localStorage.removeItem('orion_last_conv')
-        }
+          } else { localStorage.removeItem('orion_last_conv') }
+        } catch { localStorage.removeItem('orion_last_conv') }
       }
     }
     init()
-  }, []) // runs once on mount
+  }, [])
+
+  // GitHub: check connection on mount + handle OAuth callback
+  useEffect(() => {
+    async function checkGitHub() {
+      if (!user?.id) return
+      const { data } = await supabase
+        .from('user_github_tokens')
+        .select('github_login, github_name, avatar_url')
+        .eq('user_id', user.id)
+        .single()
+      if (data?.github_login) setGithubUser(data)
+    }
+    checkGitHub()
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('github_connected')) {
+      checkGitHub()
+      window.history.replaceState({}, '', '/chat')
+    }
+    if (params.get('github_error')) {
+      alert('GitHub connection failed: ' + params.get('github_error'))
+      window.history.replaceState({}, '', '/chat')
+    }
+  }, [user?.id])
+
+  async function connectGitHub() {
+    if (!user?.id) return
+    setGithubLoading(true)
+    const clientId    = import.meta.env.VITE_GITHUB_CLIENT_ID
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const callbackUrl = `${supabaseUrl}/functions/v1/github-oauth-callback`
+    const scope       = 'repo,read:user'
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${scope}&state=${user.id}`
+  }
+
+  async function disconnectGitHub() {
+    if (!user?.id) return
+    await supabase.from('user_github_tokens').delete().eq('user_id', user.id)
+    setGithubUser(null)
+  }
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => { chatAreaRef.current?.scrollTo({ top: chatAreaRef.current.scrollHeight, behavior: 'smooth' }) }, 0)
@@ -485,32 +429,13 @@ export default function Chat() {
     const text = input.trim()
     if (!text || isStreaming) return
 
-    // If user has an image uploaded — classify whether they want to EDIT or ANALYSE it
     if (isImageFile && imageUrl) {
-      // Strong analysis signals — always route to chat regardless of anything else
-      const analysisKeywords = [
-        'what', 'who', 'where', 'when', 'why', 'how many', 'describe', 'explain',
-        'identify', 'tell me', 'analyse', 'analyze', 'read', 'extract', 'transcribe',
-        'summarize', 'summarise', 'caption', 'detect', 'find', 'is there', 'are there',
-        'count', 'list', 'show me', 'can you see', 'do you see', 'look at', 'check'
-      ]
-      // Strong edit signals — only route to edit if NO analysis keywords present
-      const editKeywords = [
-        'edit', 'change', 'modify', 'make it', 'turn it', 'convert', 'add a', 'add the',
-        'remove the', 'remove a', 'replace', 'apply', 'transform', 'adjust', 'crop',
-        'blur', 'sharpen', 'make the background', 'change the color', 'change the colour',
-        'make him', 'make her', 'make them', 'make the', 'put a', 'put the', 'give it',
-        'give him', 'give her', 'style it', 'filter', 'brighter', 'darker', 'lighter'
-      ]
+      const analysisKeywords = ['what','who','where','when','why','how many','describe','explain','identify','tell me','analyse','analyze','read','extract','transcribe','summarize','summarise','caption','detect','find','is there','are there','count','list','show me','can you see','do you see','look at','check']
+      const editKeywords = ['edit','change','modify','make it','turn it','convert','add a','add the','remove the','remove a','replace','apply','transform','adjust','crop','blur','sharpen','make the background','change the color','change the colour','make him','make her','make them','make the','put a','put the','give it','give him','give her','style it','filter','brighter','darker','lighter']
       const lower = text.toLowerCase()
       const wantsAnalysis = analysisKeywords.some(k => lower.includes(k))
       const wantsEdit = !wantsAnalysis && editKeywords.some(k => lower.includes(k))
-
-      if (wantsEdit) {
-        await handleImageEdit(text, text)
-        return
-      }
-      // wantsAnalysis OR ambiguous — fall through to normal chat which handles image analysis
+      if (wantsEdit) { await handleImageEdit(text, text); return }
     }
 
     if (!uploadedFile) {
@@ -520,9 +445,9 @@ export default function Chat() {
       } catch {}
     }
 
-    resetTypewriter()  // flush any previous response instantly
+    resetTypewriter()
     setIsStreaming(true); setInput('')
-    setMessages(prev => [...prev, { role: 'user', content: uploadedFile ? `📎 ${uploadedFile.name}\n${text}` : text }])
+    setMessages(prev => [...prev, { role: 'user',  content: uploadedFile ? `📎 ${uploadedFile.name}\n${text}` : text }])
     setStatus('Thinking…'); setStatusLoading(true)
     setMessages(prev => [...prev, { role: 'assistant', content: '', streaming: true }])
 
@@ -553,12 +478,9 @@ export default function Chat() {
             } else if (data.type === 'searching') {
               setStatus('🔍 Searching the web…')
             } else if (data.type === 'delta') {
-              // Push each character into the queue — typewriter drains it at natural speed
               for (const char of data.text) typeQueueRef.current.push(char)
               startTypewriter()
             } else if (data.type === 'done') {
-              // Signal typewriter that no more chunks are coming
-              // It will finalize once the queue is empty
               typeDoneRef.current = true
             }
           } catch {}
@@ -594,20 +516,11 @@ export default function Chat() {
     setMessages(prev => [...prev, { role:'assistant', content:'⏳ Editing image…', streaming:false }])
     setStatus('Editing image…'); setStatusLoading(true)
     try {
-      const data = await callEdgeFunction('edit-image', {
-        imageUrl: imageUrl,
-        instruction,
-        userId: user.id,
-      })
+      const data = await callEdgeFunction('edit-image', { imageUrl, instruction, userId: user.id })
       if (!data.success) throw new Error(data.error || 'Edit failed')
       const imgUrl = data.image_url || `data:image/jpeg;base64,${data.image_data}`
       setMessages(prev => { const n=[...prev]; n[n.length-1]={ role:'assistant', content:`__IMAGE__${imgUrl}__PROMPT__Edited: ${instruction}`, streaming:false }; return n })
-      await callEdgeFunction('save-image-messages', {
-        conversationId, userId: user.id,
-        userMessage: `Edit image: ${instruction}`,
-        assistantMessage: `Edited image: "${instruction}"
-![image](${imgUrl})`
-      })
+      await callEdgeFunction('save-image-messages', { conversationId, userId: user.id, userMessage: `Edit image: ${instruction}`, assistantMessage: `Edited image: "${instruction}"\n![image](${imgUrl})` })
       load()
     } catch (err) {
       setMessages(prev => { const n=[...prev]; n[n.length-1]={ role:'assistant', content:'⚠ Image edit failed: '+err.message, streaming:false }; return n })
@@ -650,6 +563,41 @@ export default function Chat() {
             }
           </div>
           <div className="sidebar-footer">
+            {/* GitHub Connection */}
+            <div style={{padding:'10px 12px', borderBottom:'1px solid rgba(255,255,255,0.5)'}}>
+              {githubUser ? (
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <img src={githubUser.avatar_url} alt="" style={{width:26,height:26,borderRadius:'50%',border:'1px solid rgba(0,0,0,0.1)',flexShrink:0}} />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'0.75rem',fontWeight:600,color:'#1a1d23',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      {githubUser.github_login}
+                    </div>
+                    <div style={{fontSize:'0.67rem',color:'#34c759'}}>● GitHub connected</div>
+                  </div>
+                  <button onClick={disconnectGitHub} style={{background:'none',border:'none',color:'#b0bac8',cursor:'pointer',fontSize:'0.9rem',padding:'2px 5px',borderRadius:4,flexShrink:0}} title="Disconnect GitHub">✕</button>
+                </div>
+              ) : (
+                <button
+                  onClick={connectGitHub}
+                  disabled={githubLoading}
+                  style={{
+                    width:'100%', padding:'8px 12px', borderRadius:10,
+                    background:'#1a1d23', border:'none', color:'#fff',
+                    display:'flex', alignItems:'center', gap:8,
+                    cursor: githubLoading ? 'not-allowed' : 'pointer',
+                    fontSize:'0.78rem', fontWeight:500,
+                    opacity: githubLoading ? 0.6 : 1,
+                    transition:'all 0.2s',
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                  {githubLoading ? 'Connecting…' : 'Connect GitHub'}
+                </button>
+              )}
+            </div>
+            {/* User row */}
             <div className="user-row">
               <div className="user-av">{user?.email?.[0]?.toUpperCase()}</div>
               <div className="user-email">{user?.email}</div>
@@ -737,21 +685,12 @@ export default function Chat() {
                 </button>
                 {recognitionRef.current && (
                   <button className={`icon-btn${isListening?' listening':''}`} onClick={toggleMic} title="Voice input">
-                    {isListening ? (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="2" width="6" height="13" rx="3"/>
-                        <path d="M5 10a7 7 0 0014 0"/>
-                        <line x1="12" y1="19" x2="12" y2="23"/>
-                        <line x1="8" y1="23" x2="16" y2="23"/>
-                      </svg>
-                    ) : (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="2" width="6" height="13" rx="3"/>
-                        <path d="M5 10a7 7 0 0014 0"/>
-                        <line x1="12" y1="19" x2="12" y2="23"/>
-                        <line x1="8" y1="23" x2="16" y2="23"/>
-                      </svg>
-                    )}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="2" width="6" height="13" rx="3"/>
+                      <path d="M5 10a7 7 0 0014 0"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                      <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
                   </button>
                 )}
                 <button className="send-btn" onClick={sendMessage} disabled={isStreaming||!input.trim()}>
@@ -769,4 +708,5 @@ export default function Chat() {
       {callActive && <CallMode user={user} onClose={()=>setCallActive(false)} />}
     </>
   )
-}
+                                }
+                            
