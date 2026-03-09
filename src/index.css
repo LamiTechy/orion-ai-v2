@@ -24,8 +24,25 @@
   --radius-sm: 12px;
 }
 
+html {
+  /* Prevent Chrome Android from resizing the viewport when keyboard opens */
+  height: -webkit-fill-available;
+}
+
+body {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  height: 100dvh; /* shrinks correctly with keyboard on Android */
+  overflow: hidden;
+}
+
 html, body, #root {
-  height: 100%;
   font-family: 'DM Sans', sans-serif;
   background: linear-gradient(135deg, #e8eef7 0%, #dde6f5 50%, #ead8f0 100%);
   background-attachment: fixed;

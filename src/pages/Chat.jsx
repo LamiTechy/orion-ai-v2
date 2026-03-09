@@ -5,7 +5,14 @@ import { streamEdgeFunction, callEdgeFunction, supabase } from '../lib/supabase'
 import MessageBubble from '../components/MessageBubble'
 
 const CSS = `
-  .chat-app { display:flex; height:100vh; overflow:hidden; position:relative; z-index:1; }
+  .chat-app {
+    display:flex;
+    height: 100vh;
+    height: 100dvh;        /* dynamic — shrinks when Android keyboard opens */
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+  }
 
   /* ── Sidebar ── */
   .sidebar {
@@ -179,71 +186,88 @@ const CSS = `
   .status-dot.loading { background:#007AFF; animation:pulse 1s infinite; }
   .status-text { font-size:0.72rem; color:#b0bac8; }
 
-  /* ── Mobile — WhatsApp-style fixed layout ── */
+  /* ── Mobile — keyboard-proof layout ── */
   @media (max-width:768px) {
-    /* Sidebar slides in as overlay */
+    /*
+      KEY INSIGHT: We do NOT use position:fixed on .main or .chat-header.
+      Instead the whole .chat-app is a flex column that fills 100dvh.
+      When Android keyboard opens, 100dvh shrinks → .chat-area (flex:1) shrinks
+      → header and input bar stay visible because they are flex-shrink:0.
+    */
+    .chat-app {
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+    }
+
+    /* Sidebar stays as a fixed overlay */
     .sidebar {
-      position:fixed; left:0; top:0; width:280px; height:100%;
-      z-index:1000; transform:translateX(-100%); transition:transform 0.28s ease;
+      position: fixed;
+      left: 0; top: 0;
+      width: 280px;
+      height: 100vh; height: 100dvh;
+      z-index: 1000;
+      transform: translateX(-100%);
+      transition: transform 0.28s ease;
     }
-    .sidebar.open { transform:translateX(0); box-shadow: 4px 0 32px rgba(0,0,0,0.18); }
-    .hamburger { display:block; }
-    .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.25); backdrop-filter:blur(2px); z-index:999; }
-    .overlay.open { display:block; }
+    .sidebar.open { transform: translateX(0); box-shadow: 4px 0 32px rgba(0,0,0,0.18); }
+    .hamburger { display: block; }
+    .overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.25); backdrop-filter: blur(2px); z-index: 999;
+    }
+    .overlay.open { display: block; }
 
-    /* Main fills entire screen */
+    /* Main is a normal flex column child — NOT fixed */
     .main {
-      position:fixed; inset:0;
-      display:flex; flex-direction:column;
-      height:100%; width:100%;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;   /* lets it shrink below its content size */
+      overflow: hidden;
+      width: 100%;
     }
 
-    /* Top bar — fixed at top, never scrolls */
+    /* Header — flex-shrink:0 keeps it always visible */
     .chat-header {
-      flex-shrink:0;
-      position:sticky; top:0; z-index:10;
-      padding:12px 16px;
-      background: rgba(255,255,255,0.88);
+      flex-shrink: 0;
+      padding: 10px 14px;
+      min-height: 52px;
+      background: rgba(255,255,255,0.97);
       backdrop-filter: blur(20px) saturate(200%);
       -webkit-backdrop-filter: blur(20px) saturate(200%);
-      border-bottom: 1px solid rgba(0,0,0,0.07);
-      min-height:56px;
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+      z-index: 10;
     }
 
-    /* Message area — scrolls independently */
+    /* Chat area — the ONLY thing that shrinks and scrolls */
     .chat-area {
-      flex:1;
-      overflow-y:auto;
-      overflow-x:hidden;
-      padding:12px 12px 8px;
-      -webkit-overflow-scrolling:touch;
-      overscroll-behavior:contain;
+      flex: 1;
+      min-height: 0;   /* critical — without this flex won't shrink it */
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px 12px 8px;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
     }
 
-    /* Input area — fixed at bottom, rises with keyboard */
+    /* Input bar — flex-shrink:0 keeps it always visible at the bottom */
     .input-area {
-      flex-shrink:0;
-      position:sticky; bottom:0;
-      padding:8px 12px 12px;
-      background: rgba(255,255,255,0.92);
+      flex-shrink: 0;
+      padding: 8px 12px;
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+      background: rgba(255,255,255,0.97);
       backdrop-filter: blur(20px) saturate(200%);
       -webkit-backdrop-filter: blur(20px) saturate(200%);
-      border-top: 1px solid rgba(0,0,0,0.07);
-      /* Rise above keyboard on iOS/Android */
-      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      border-top: 1px solid rgba(0,0,0,0.08);
     }
 
-    /* Tighter input box on mobile */
-    .input-box { border-radius:24px; padding:8px 8px 8px 14px; }
-    .input-textarea { font-size:1rem; }
-    .send-btn { width:40px; height:40px; border-radius:50%; }
-
-    /* File chip smaller */
-    .file-chip { margin-bottom:8px; }
-    .file-chip-name { max-width:150px; }
-
-    /* Status row smaller */
-    .status-row { padding-top:4px; }
+    .input-box { border-radius: 24px; padding: 8px 8px 8px 14px; }
+    .input-textarea { font-size: 1rem; }
+    .send-btn { width: 40px; height: 40px; border-radius: 50%; }
+    .file-chip { margin-bottom: 8px; }
+    .file-chip-name { max-width: 150px; }
+    .status-row { padding-top: 4px; }
   }
 `
 
@@ -280,7 +304,7 @@ export default function Chat() {
   function startTypewriter() {
     if (typeTimerRef.current) return // already running
 
-    const TARGET_CPS = 38  // characters per second — feels natural, not too slow
+    const TARGET_CPS = 55  // characters per second — fast enough for markdown to render cleanly
 
     let lastTime = null
     let charBudget = 0

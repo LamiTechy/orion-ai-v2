@@ -4,8 +4,37 @@ import { supabase } from '../lib/supabase'
 
 marked.setOptions({ breaks: true, gfm: true })
 
-function renderMarkdown(text) {
-  try { return marked.parse(text) } catch { return text }
+// During streaming, incomplete markdown tokens cause ugly broken output.
+// This sanitizes partial tokens so the parser always gets clean input.
+function sanitizeStreaming(text) {
+  let t = text
+
+  // Close unclosed code fences (odd number of ```)
+  const fenceCount = (t.match(/```/g) || []).length
+  if (fenceCount % 2 !== 0) t += '\n```'
+
+  // Close unclosed inline backticks (outside fenced blocks)
+  const stripped = t.replace(/```[\s\S]*?```/g, '')
+  const backtickCount = (stripped.match(/`/g) || []).length
+  if (backtickCount % 2 !== 0) t += '`'
+
+  // Close dangling **bold** — if there's an unclosed ** at the end
+  t = t.replace(/(\*\*[^*\n]+)$/, '$1**')
+
+  // Close dangling *italic* — if there's an unclosed * at the end
+  t = t.replace(/(?<!\*)\*(?!\*)([^*\n]+)$/, '*$1*')
+
+  // Remove incomplete list/header line at end (e.g. trailing "- " or "## ")
+  t = t.replace(/\n[-*#>]+\s*$/, '')
+
+  return t
+}
+
+function renderMarkdown(text, isStreaming = false) {
+  try {
+    const clean = isStreaming ? sanitizeStreaming(text) : text
+    return marked.parse(clean)
+  } catch { return text }
 }
 
 function addCopyButtons(el) {
@@ -36,28 +65,22 @@ function parseCodeFiles(content) {
     const hint = match[2]?.trim()
     const code = match[3]
     let filename = null
-    // 1. Path after lang tag with no spaces: ```tsx src/App.tsx
-    if (hint && /[.\/]/.test(hint) && !hint.includes(' ')) filename = hint
-    // 2. First-line comment exactly matching a filepath: // src/App.tsx
+    if (hint && /[./]/.test(hint) && !hint.includes(' ')) filename = hint
     else {
       const firstLine = code.split('\n')[0].trim()
-      const m = firstLine.match(/^(?:\/\/|#|<!--|--|;)\s*([\w][\w.\-\/]*\.\w+)\s*$/)
+      const m = firstLine.match(/^(?:\/\/|#|<!--|--|;)\s*([\w][\w.\-/]*\.\w+)\s*$/)
       if (m) filename = m[1]
     }
-    // null path = unnamed snippet — tracked but excluded from ZIP
     files.push({ path: filename, content: code.trimEnd(), lang })
   }
   return files
 }
 
-// Show ZIP only when 2+ blocks have EXPLICIT filenames Orion intentionally set.
-// Single snippets, before/after pairs, and examples never trigger it.
 function shouldShowZip(files) {
   const named = files.filter(f => f.path !== null)
   if (named.length < 2) return false
   const paths = new Set(named.map(f => f.path))
   if (paths.size < 2) return false
-  // Skip if only 2 files with same extension and both are short (before/after pattern)
   const exts = new Set(named.map(f => f.path.split('.').pop()))
   if (exts.size === 1 && named.length === 2) {
     if (named.every(f => f.content.split('\n').length < 20)) return false
@@ -65,10 +88,9 @@ function shouldShowZip(files) {
   return true
 }
 
-
 // ── ZIP Download button ───────────────────────────────────────────────────
 function ZipButton({ files, projectName }) {
-  const [state, setState] = useState('idle') // idle | loading | done | error
+  const [state, setState] = useState('idle')
 
   async function downloadZip() {
     setState('loading')
@@ -76,7 +98,6 @@ function ZipButton({ files, projectName }) {
       const session = await supabase.auth.getSession()
       const token = session.data.session?.access_token
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-zip`
-
       const res = await fetch(url, {
         method: 'POST',
         headers: {
@@ -86,9 +107,7 @@ function ZipButton({ files, projectName }) {
         },
         body: JSON.stringify({ files, projectName }),
       })
-
       if (!res.ok) throw new Error(await res.text())
-
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -117,12 +136,9 @@ function ZipButton({ files, projectName }) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 8,
         padding: '9px 18px', marginTop: 14,
-        background: bg[state],
-        border: `1px solid ${border[state]}`,
+        background: bg[state], border: `1px solid ${border[state]}`,
         borderRadius: 100, color: color[state], cursor: state === 'loading' ? 'not-allowed' : 'pointer',
-        fontSize: '0.82rem', fontWeight: 500,
-        fontFamily: 'DM Sans,sans-serif',
-        transition: 'all 0.2s',
+        fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
       }}
       onMouseEnter={e => { if (state === 'idle') { e.currentTarget.style.background = 'rgba(0,122,255,0.14)'; e.currentTarget.style.transform = 'translateY(-1px)' }}}
       onMouseLeave={e => { e.currentTarget.style.background = bg[state]; e.currentTarget.style.transform = 'translateY(0)' }}
@@ -141,7 +157,7 @@ function ZipButton({ files, projectName }) {
         </svg>
       )}
       {label[state]}
-      <span style={{ fontSize:'0.72rem', opacity:0.6, marginLeft:2 }}>
+      <span style={{ fontSize: '0.72rem', opacity: 0.6, marginLeft: 2 }}>
         {state === 'idle' ? `${files.length} file${files.length !== 1 ? 's' : ''}` : ''}
       </span>
     </button>
@@ -171,26 +187,26 @@ function ImageMessage({ imgUrl, prompt }) {
   return (
     <div>
       <img src={imgUrl} alt="Generated"
-        style={{ maxWidth:480, width:'100%', borderRadius:16, marginBottom:10, display:'block', boxShadow:'0 8px 32px rgba(0,0,0,0.1)' }}
+        style={{ maxWidth: 480, width: '100%', borderRadius: 16, marginBottom: 10, display: 'block', boxShadow: '0 8px 32px rgba(0,0,0,0.1)' }}
       />
       <button
         onClick={() => downloadImage(imgUrl)}
         style={{
-          display:'inline-flex', alignItems:'center', gap:7,
-          padding:'8px 18px',
-          background:'rgba(0,122,255,0.08)', border:'1px solid rgba(0,122,255,0.2)',
-          borderRadius:100, color:'#007AFF', cursor:'pointer',
-          fontSize:'0.82rem', fontWeight:500, fontFamily:'DM Sans,sans-serif', transition:'all 0.2s',
+          display: 'inline-flex', alignItems: 'center', gap: 7,
+          padding: '8px 18px',
+          background: 'rgba(0,122,255,0.08)', border: '1px solid rgba(0,122,255,0.2)',
+          borderRadius: 100, color: '#007AFF', cursor: 'pointer',
+          fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
         }}
-        onMouseEnter={e => { e.currentTarget.style.background='rgba(0,122,255,0.15)'; e.currentTarget.style.transform='translateY(-1px)' }}
-        onMouseLeave={e => { e.currentTarget.style.background='rgba(0,122,255,0.08)'; e.currentTarget.style.transform='translateY(0)' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,122,255,0.15)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; e.currentTarget.style.transform = 'translateY(0)' }}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v13M7 11l5 5 5-5"/><path d="M3 19h18"/>
         </svg>
         Save image
       </button>
-      {prompt && <div style={{ marginTop:8, color:'#8a95a8', fontSize:'0.78rem' }}>Prompt: {prompt}</div>}
+      {prompt && <div style={{ marginTop: 8, color: '#8a95a8', fontSize: '0.78rem' }}>Prompt: {prompt}</div>}
     </div>
   )
 }
@@ -203,20 +219,15 @@ export default function MessageBubble({ role, content, streaming }) {
   const imageMatch = typeof content === 'string' && content.match(/^__IMAGE__(.+)__PROMPT__(.*)$/)
   const storedImgMatch = !imageMatch && typeof content === 'string' && content.match(/!\[image\]\(([^)]+)\)/)
 
-  // Parse code files for ZIP button — only on complete AI messages
   const codeFiles = (!streaming && isAI && !imageMatch && !storedImgMatch && typeof content === 'string')
-    ? parseCodeFiles(content)
-    : []
+    ? parseCodeFiles(content) : []
   const showZip = shouldShowZip(codeFiles)
 
-  // Derive a project name from the first filename found
   const projectName = (() => {
     const named = codeFiles.filter(f => f.path !== null)
     if (!named.length) return 'orion-project'
-    // If files share a common root folder, use that as project name
     const parts = named[0].path.split('/')
     if (parts.length > 1) return parts[0]
-    // Otherwise derive from conversation context — use a generic name
     return 'orion-project'
   })()
 
@@ -226,29 +237,29 @@ export default function MessageBubble({ role, content, streaming }) {
   }, [content, streaming, isAI, imageMatch, storedImgMatch])
 
   const wrapStyle = {
-    display:'flex', gap:10,
-    animation:'fadeUp 0.2s ease both',
+    display: 'flex', gap: 10,
+    animation: 'fadeUp 0.2s ease both',
     flexDirection: isAI ? 'row' : 'row-reverse',
-    alignItems:'flex-start',
+    alignItems: 'flex-start',
   }
   const avatarStyle = {
-    width:30, height:30, borderRadius:'50%', flexShrink:0,
-    display:'flex', alignItems:'center', justifyContent:'center',
-    fontSize:'0.7rem', fontWeight:600,
+    width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.7rem', fontWeight: 600,
     background: isAI ? 'linear-gradient(135deg,rgba(0,122,255,0.15),rgba(88,86,214,0.15))' : 'rgba(0,0,0,0.06)',
     border: isAI ? '1px solid rgba(0,122,255,0.2)' : '1px solid rgba(0,0,0,0.08)',
     color: isAI ? '#007AFF' : '#4a5568',
-    marginTop:2,
+    marginTop: 2,
   }
   const bubbleStyle = {
-    padding:'11px 15px', borderRadius: isAI ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
-    fontSize:'0.88rem', maxWidth:'calc(100% - 50px)', wordBreak:'break-word', lineHeight:1.6,
+    padding: '11px 15px', borderRadius: isAI ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+    fontSize: '0.88rem', maxWidth: 'calc(100% - 50px)', wordBreak: 'break-word', lineHeight: 1.6,
     background: isAI ? 'rgba(255,255,255,0.72)' : 'rgba(0,122,255,0.09)',
     border: isAI ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(0,122,255,0.18)',
-    backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)',
+    backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
     boxShadow: isAI ? '0 2px 12px rgba(100,120,180,0.08)' : '0 2px 12px rgba(0,122,255,0.06)',
     whiteSpace: isAI ? undefined : 'pre-wrap',
-    color:'#1a1d23',
+    color: '#1a1d23',
   }
 
   if (imageMatch) return (
@@ -264,7 +275,7 @@ export default function MessageBubble({ role, content, streaming }) {
     return (
       <div style={wrapStyle}>
         <div style={avatarStyle}>O</div>
-        <div style={bubbleStyle}><ImageMessage imgUrl={imgUrl} prompt={rest||undefined} /></div>
+        <div style={bubbleStyle}><ImageMessage imgUrl={imgUrl} prompt={rest || undefined} /></div>
       </div>
     )
   }
@@ -273,8 +284,8 @@ export default function MessageBubble({ role, content, streaming }) {
     <div style={wrapStyle}>
       <div style={avatarStyle}>O</div>
       <div style={bubbleStyle} className="bubble">
-        {content}
-        <span style={{ display:'inline-block', width:2, height:'1em', background:'#007AFF', marginLeft:3, animation:'blink 0.7s step-end infinite', verticalAlign:'text-bottom', borderRadius:2 }} />
+        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content, true) }} />
+        <span style={{ display: 'inline-block', width: 2, height: '1em', background: '#007AFF', marginLeft: 3, animation: 'blink 0.7s step-end infinite', verticalAlign: 'text-bottom', borderRadius: 2 }} />
       </div>
     </div>
   )
@@ -284,9 +295,7 @@ export default function MessageBubble({ role, content, streaming }) {
       <div style={avatarStyle}>O</div>
       <div style={{ ...bubbleStyle, padding: showZip ? '11px 15px 15px' : '11px 15px' }} className="bubble" ref={bubbleRef}>
         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
-        {showZip && (
-          <ZipButton files={codeFiles.filter(f => f.path !== null)} projectName={projectName} />
-        )}
+        {showZip && <ZipButton files={codeFiles.filter(f => f.path !== null)} projectName={projectName} />}
       </div>
     </div>
   )
