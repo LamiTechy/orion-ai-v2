@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useConversations } from '../hooks/useConversations'
 import { streamEdgeFunction, callEdgeFunction, supabase } from '../lib/supabase'
 import MessageBubble from '../components/MessageBubble'
+import CallMode from '../components/CallMode'
 
 const CSS = `
   .chat-app {
@@ -294,6 +295,7 @@ export default function Chat() {
   const [isImageFile, setIsImageFile] = useState(false)
   const [imageUrl, setImageUrl] = useState(null)
   const [isListening, setIsListening] = useState(false)
+  const [callActive, setCallActive] = useState(false)
 
   const recognitionRef = useRef(null)
   const chatAreaRef = useRef(null)
@@ -663,7 +665,27 @@ export default function Chat() {
               <button className="hamburger" onClick={()=>setSidebarOpen(v=>!v)}>☰</button>
               <div className="chat-title">{currentTitle}</div>
             </div>
-            <button className="clear-btn" onClick={()=>conversationId&&deleteConversation(conversationId)}>Clear</button>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <button
+                onClick={()=>setCallActive(true)}
+                style={{
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  gap:6, padding:'6px 14px', borderRadius:100,
+                  background:'rgba(52,199,89,0.1)', border:'1px solid rgba(52,199,89,0.25)',
+                  color:'#1a7a35', cursor:'pointer', fontSize:'0.78rem', fontWeight:500,
+                  transition:'all 0.2s',
+                }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(52,199,89,0.18)'}
+                onMouseLeave={e=>e.currentTarget.style.background='rgba(52,199,89,0.1)'}
+                title="Start voice call"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/>
+                </svg>
+                Call
+              </button>
+              <button className="clear-btn" onClick={()=>conversationId&&deleteConversation(conversationId)}>Clear</button>
+            </div>
           </div>
 
           <div className="chat-area" ref={chatAreaRef}>
@@ -744,6 +766,7 @@ export default function Chat() {
           </div>
         </div>
       </div>
+      {callActive && <CallMode user={user} onClose={()=>setCallActive(false)} />}
     </>
   )
 }
