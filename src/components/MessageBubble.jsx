@@ -4,29 +4,16 @@ import { supabase } from '../lib/supabase'
 
 marked.setOptions({ breaks: true, gfm: true })
 
-// During streaming, incomplete markdown tokens cause ugly broken output.
-// This sanitizes partial tokens so the parser always gets clean input.
 function sanitizeStreaming(text) {
   let t = text
-
-  // Close unclosed code fences (odd number of ```)
   const fenceCount = (t.match(/```/g) || []).length
   if (fenceCount % 2 !== 0) t += '\n```'
-
-  // Close unclosed inline backticks (outside fenced blocks)
   const stripped = t.replace(/```[\s\S]*?```/g, '')
   const backtickCount = (stripped.match(/`/g) || []).length
   if (backtickCount % 2 !== 0) t += '`'
-
-  // Close dangling **bold** — if there's an unclosed ** at the end
   t = t.replace(/(\*\*[^*\n]+)$/, '$1**')
-
-  // Close dangling *italic* — if there's an unclosed * at the end
   t = t.replace(/(?<!\*)\*(?!\*)([^*\n]+)$/, '*$1*')
-
-  // Remove incomplete list/header line at end (e.g. trailing "- " or "## ")
   t = t.replace(/\n[-*#>]+\s*$/, '')
-
   return t
 }
 
@@ -55,40 +42,70 @@ function addCopyButtons(el) {
   if (window.hljs) el.querySelectorAll('pre code').forEach(el => window.hljs.highlightElement(el))
 }
 
-// ── Parse code blocks from markdown ─────────────────────────────────────────
+// ── Parse ALL code blocks — named or unnamed ──────────────────────────────
 function parseCodeFiles(content) {
   const files = []
   const blockRegex = /```(\w+)(?:\s+([^\n]+))?\n([\s\S]*?)```/g
   let match
+  let unnamedCount = 0
   while ((match = blockRegex.exec(content)) !== null) {
     const lang = match[1]
     const hint = match[2]?.trim()
     const code = match[3]
     let filename = null
-    if (hint && /[./]/.test(hint) && !hint.includes(' ')) filename = hint
-    else {
+
+    // 1. Path after lang tag: ```tsx src/App.tsx
+    if (hint && /[./]/.test(hint) && !hint.includes(' ')) {
+      filename = hint
+    } else {
+      // 2. First-line comment: // src/App.tsx or <!-- index.html -->
       const firstLine = code.split('\n')[0].trim()
-      const m = firstLine.match(/^(?:\/\/|#|<!--|--|;)\s*([\w][\w.\-/]*\.\w+)\s*$/)
+      const m = firstLine.match(/^(?:\/\/|#|<!--|--|;|\/\*)\s*([\w][\w.\-/]*\.\w+)\s*(?:-->|\*\/)?$/)
       if (m) filename = m[1]
     }
-    files.push({ path: filename, content: code.trimEnd(), lang })
+
+    // 3. No filename — generate one from lang so it still gets zipped
+    if (!filename) {
+      const extMap = {
+        javascript: 'js', typescript: 'ts', jsx: 'jsx', tsx: 'tsx',
+        python: 'py', html: 'html', css: 'css', scss: 'scss',
+        json: 'json', bash: 'sh', shell: 'sh', sql: 'sql',
+        rust: 'rs', go: 'go', java: 'java', cpp: 'cpp', c: 'c',
+        yaml: 'yml', toml: 'toml', markdown: 'md', php: 'php',
+        ruby: 'rb', swift: 'swift', kotlin: 'kt',
+      }
+      const ext = extMap[lang.toLowerCase()] || lang
+      unnamedCount++
+      filename = unnamedCount === 1 ? `index.${ext}` : `file${unnamedCount}.${ext}`
+    }
+
+    // Skip tiny snippets under 3 lines — they're just inline examples
+    if (code.trim().split('\n').length >= 3) {
+      files.push({ path: filename, content: code.trimEnd(), lang })
+    }
   }
   return files
 }
 
+// Show ZIP when 2+ code blocks are present (each has enough content)
 function shouldShowZip(files) {
-  const named = files.filter(f => f.path !== null)
-  if (named.length < 2) return false
-  const paths = new Set(named.map(f => f.path))
-  if (paths.size < 2) return false
-  const exts = new Set(named.map(f => f.path.split('.').pop()))
-  if (exts.size === 1 && named.length === 2) {
-    if (named.every(f => f.content.split('\n').length < 20)) return false
-  }
-  return true
+  if (files.length < 2) return false
+  // Make sure total content is substantial — not just two 3-line snippets
+  const totalLines = files.reduce((sum, f) => sum + f.content.split('\n').length, 0)
+  return totalLines >= 15
 }
 
-// ── ZIP Download button ───────────────────────────────────────────────────
+function deriveProjectName(files) {
+  // Try to find a named file with a folder structure
+  const named = files.filter(f => f.path && f.path.includes('/'))
+  if (named.length) return named[0].path.split('/')[0]
+  // Try common root names from filenames
+  const htmlFile = files.find(f => f.path?.endsWith('.html'))
+  if (htmlFile) return htmlFile.path.replace('.html', '')
+  return 'orion-project'
+}
+
+// ── ZIP Download button ────────────────────────────────────────────────────
 function ZipButton({ files, projectName }) {
   const [state, setState] = useState('idle')
 
@@ -124,7 +141,7 @@ function ZipButton({ files, projectName }) {
     }
   }
 
-  const label = { idle: 'Download ZIP', loading: 'Building ZIP…', done: '✓ Downloaded', error: 'Failed — retry' }
+  const label = { idle: 'Download ZIP', loading: 'Building…', done: '✓ Downloaded', error: 'Failed — retry' }
   const bg = { idle: 'rgba(0,122,255,0.08)', loading: 'rgba(0,122,255,0.05)', done: 'rgba(52,199,89,0.1)', error: 'rgba(255,59,48,0.08)' }
   const color = { idle: '#007AFF', loading: '#007AFF', done: '#1a7a35', error: '#cc2200' }
   const border = { idle: 'rgba(0,122,255,0.2)', loading: 'rgba(0,122,255,0.15)', done: 'rgba(52,199,89,0.25)', error: 'rgba(255,59,48,0.2)' }
@@ -137,8 +154,10 @@ function ZipButton({ files, projectName }) {
         display: 'inline-flex', alignItems: 'center', gap: 8,
         padding: '9px 18px', marginTop: 14,
         background: bg[state], border: `1px solid ${border[state]}`,
-        borderRadius: 100, color: color[state], cursor: state === 'loading' ? 'not-allowed' : 'pointer',
-        fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
+        borderRadius: 100, color: color[state],
+        cursor: state === 'loading' ? 'not-allowed' : 'pointer',
+        fontSize: '0.82rem', fontWeight: 500,
+        fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
       }}
       onMouseEnter={e => { if (state === 'idle') { e.currentTarget.style.background = 'rgba(0,122,255,0.14)'; e.currentTarget.style.transform = 'translateY(-1px)' }}}
       onMouseLeave={e => { e.currentTarget.style.background = bg[state]; e.currentTarget.style.transform = 'translateY(0)' }}
@@ -192,8 +211,7 @@ function ImageMessage({ imgUrl, prompt }) {
       <button
         onClick={() => downloadImage(imgUrl)}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          padding: '8px 18px',
+          display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 18px',
           background: 'rgba(0,122,255,0.08)', border: '1px solid rgba(0,122,255,0.2)',
           borderRadius: 100, color: '#007AFF', cursor: 'pointer',
           fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
@@ -222,14 +240,7 @@ export default function MessageBubble({ role, content, streaming }) {
   const codeFiles = (!streaming && isAI && !imageMatch && !storedImgMatch && typeof content === 'string')
     ? parseCodeFiles(content) : []
   const showZip = shouldShowZip(codeFiles)
-
-  const projectName = (() => {
-    const named = codeFiles.filter(f => f.path !== null)
-    if (!named.length) return 'orion-project'
-    const parts = named[0].path.split('/')
-    if (parts.length > 1) return parts[0]
-    return 'orion-project'
-  })()
+  const projectName = deriveProjectName(codeFiles)
 
   useEffect(() => {
     if (!bubbleRef.current || !isAI || streaming || imageMatch || storedImgMatch) return
@@ -295,7 +306,7 @@ export default function MessageBubble({ role, content, streaming }) {
       <div style={avatarStyle}>O</div>
       <div style={{ ...bubbleStyle, padding: showZip ? '11px 15px 15px' : '11px 15px' }} className="bubble" ref={bubbleRef}>
         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
-        {showZip && <ZipButton files={codeFiles.filter(f => f.path !== null)} projectName={projectName} />}
+        {showZip && <ZipButton files={codeFiles} projectName={projectName} />}
       </div>
     </div>
   )
