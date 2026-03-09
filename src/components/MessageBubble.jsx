@@ -64,7 +64,7 @@ function parseCodeFiles(content) {
       if (m) filename = m[1]
     }
 
-    // 3. No filename — generate one from lang so it still gets zipped
+    // 3. No filename — infer a meaningful name from the code content
     if (!filename) {
       const extMap = {
         javascript: 'js', typescript: 'ts', jsx: 'jsx', tsx: 'tsx',
@@ -75,8 +75,96 @@ function parseCodeFiles(content) {
         ruby: 'rb', swift: 'swift', kotlin: 'kt',
       }
       const ext = extMap[lang.toLowerCase()] || lang
-      unnamedCount++
-      filename = unnamedCount === 1 ? `index.${ext}` : `file${unnamedCount}.${ext}`
+      const lines = code.split('\n').slice(0, 20).join('\n')
+
+      // Try to extract a meaningful name from the code itself
+      let inferredName = null
+
+      // HTML — look for <title>
+      if (ext === 'html') {
+        const t = code.match(/<title[^>]*>([^<]{1,40})<\/title>/i)
+        if (t) inferredName = t[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html'
+        else inferredName = 'index.html'
+      }
+
+      // CSS/SCSS — look for a body/root selector or :root to guess it's a main stylesheet
+      else if (ext === 'css' || ext === 'scss') {
+        if (/(?:body|:root|html)\s*\{/.test(code)) inferredName = 'styles.' + ext
+        else {
+          // Try to find a BEM block or component name from first selector
+          const sel = code.match(/^\s*\.([a-z][a-z0-9-]+)[\s{,]/m)
+          if (sel) inferredName = sel[1] + '.' + ext
+          else inferredName = 'styles.' + ext
+        }
+      }
+
+      // JavaScript/TypeScript — look for class name, export default, or function name
+      else if (['js','ts','jsx','tsx'].includes(ext)) {
+        // React component: export default function ComponentName or export default class
+        const comp = lines.match(/export\s+default\s+(?:function|class)\s+([A-Z][a-zA-Z0-9]+)/)
+        if (comp) inferredName = comp[1] + '.' + ext
+        // Named export: export function name or export const name
+        else {
+          const named = lines.match(/export\s+(?:function|const|class)\s+([A-Z][a-zA-Z0-9]+)/)
+          if (named) inferredName = named[1] + '.' + ext
+          else {
+            // package.json type scripts
+            const req = lines.match(/require\(['"]\.\/([^'"]+)['"]\)/)
+            if (req) inferredName = 'index.' + ext
+            // module.exports
+            else if (/module\.exports/.test(lines)) inferredName = 'index.' + ext
+            // app entry patterns
+            else if (/(?:app\.listen|createServer|ReactDOM\.render|createRoot)/.test(code)) inferredName = 'index.' + ext
+            else {
+              unnamedCount++
+              inferredName = unnamedCount === 1 ? 'index.' + ext : `module${unnamedCount}.` + ext
+            }
+          }
+        }
+      }
+
+      // Python — look for class name or if __name__ == '__main__'
+      else if (ext === 'py') {
+        if (/__name__\s*==\s*['"]__main__['"]/.test(code)) inferredName = 'main.py'
+        else {
+          const cls = lines.match(/^class\s+([A-Z][a-zA-Z0-9]+)/m)
+          if (cls) inferredName = cls[1].toLowerCase() + '.py'
+          else {
+            const fn = lines.match(/^def\s+([a-z][a-z0-9_]+)/m)
+            inferredName = fn ? fn[1] + '.py' : 'main.py'
+          }
+        }
+      }
+
+      // JSON — look for "name" field (package.json pattern)
+      else if (ext === 'json') {
+        if (/"name"\s*:/.test(lines) && /"version"\s*:/.test(lines)) inferredName = 'package.json'
+        else if (/"compilerOptions"/.test(lines)) inferredName = 'tsconfig.json'
+        else if (/"extends"/.test(lines) && /"rules"/.test(lines)) inferredName = '.eslintrc.json'
+        else inferredName = 'config.json'
+      }
+
+      // Shell
+      else if (ext === 'sh') {
+        if (/npm install|yarn add|pip install/.test(code)) inferredName = 'setup.sh'
+        else if (/docker/.test(code)) inferredName = 'docker.sh'
+        else inferredName = 'run.sh'
+      }
+
+      // SQL
+      else if (ext === 'sql') {
+        if (/CREATE TABLE/i.test(code)) inferredName = 'schema.sql'
+        else if (/INSERT INTO/i.test(code)) inferredName = 'seed.sql'
+        else inferredName = 'query.sql'
+      }
+
+      // Fallback
+      else {
+        unnamedCount++
+        inferredName = unnamedCount === 1 ? `index.${ext}` : `file${unnamedCount}.${ext}`
+      }
+
+      filename = inferredName
     }
 
     // Skip tiny snippets under 3 lines — they're just inline examples
