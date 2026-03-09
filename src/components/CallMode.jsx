@@ -37,7 +37,6 @@ function Waveform({ active, color = '#fff' }) {
 function OrionOrb({ speaking, listening }) {
   return (
     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 120, height: 120 }}>
-      {/* Pulse ring */}
       {(speaking || listening) && (
         <div style={{
           position: 'absolute', inset: -16,
@@ -46,7 +45,6 @@ function OrionOrb({ speaking, listening }) {
           animation: 'pulse-ring 1.4s ease-out infinite',
         }} />
       )}
-      {/* Main orb */}
       <div style={{
         width: 120, height: 120, borderRadius: '50%',
         background: speaking
@@ -72,82 +70,85 @@ function OrionOrb({ speaking, listening }) {
   )
 }
 
+// ── Strip tool-call artifacts and markdown before speaking ─────────────────
+function cleanForSpeech(text) {
+  return text
+    .replace(/\w+\.\w+\("[^"]*"\)/g, '')
+    .replace(/\w+\.\w+\('[^']*'\)/g, '')
+    .replace(/<\/?(?:tool_call|function)[^>]*>/g, '')
+    .replace(/```[\s\S]*?```/g, 'Here is the code.')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, 'a link')
+    .replace(/\[\w+\]/g, '')
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .trim()
+}
+
 // ── Main CallMode component ────────────────────────────────────────────────
 export default function CallMode({ user, onClose }) {
-  const [phase, setPhase] = useState('idle') // idle | listening | thinking | speaking
+  const [phase, setPhase] = useState('idle')
   const [transcript, setTranscript] = useState('')
-  const [aiText, setAiText]  = useState('')
+  const [aiText, setAiText] = useState('')
   const [callDuration, setCallDuration] = useState(0)
   const [error, setError] = useState(null)
 
-  const recognitionRef = useRef(null)
-  const audioRef       = useRef(null)
-  const timerRef       = useRef(null)
-  const conversationId = useRef(null)
-  const isMounted      = useRef(true)
+  const recognitionRef  = useRef(null)
+  const timerRef        = useRef(null)
+  const conversationId  = useRef(null)
+  const isMounted       = useRef(true)
 
-  // ── Call timer ──────────────────────────────────────────────────────────
   useEffect(() => {
     timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
     return () => clearInterval(timerRef.current)
   }, [])
 
-  useEffect(() => { isMounted.current = true; return () => { isMounted.current = false } }, [])
-
-  // ── Cleanup on unmount ──────────────────────────────────────────────────
   useEffect(() => {
+    isMounted.current = true
     return () => {
+      isMounted.current = false
+      window.speechSynthesis.cancel()
       recognitionRef.current?.stop()
-      audioRef.current?.pause()
     }
   }, [])
 
-  // ── Format duration ─────────────────────────────────────────────────────
   function fmt(s) {
     const m = Math.floor(s / 60).toString().padStart(2, '0')
     const sec = (s % 60).toString().padStart(2, '0')
     return `${m}:${sec}`
   }
 
-  // ── Speak text via browser speechSynthesis (free, no API needed) ──────────
+  // ── Speak via browser speechSynthesis ────────────────────────────────────
   const speak = useCallback((text) => {
     if (!isMounted.current) return
     setPhase('speaking')
     setAiText(text)
 
-    // Cancel any ongoing speech first
     window.speechSynthesis.cancel()
 
-    // Clean text — remove markdown symbols before speaking
-    const cleaned = text
-      .replace(/```[\s\S]*?```/g, 'Here is the code.')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/#{1,6}\s/g, '')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/https?:\/\/\S+/g, 'a link')
-      .replace(/\n{2,}/g, '. ')
-      .replace(/\n/g, ' ')
-      .trim()
+    const cleaned = cleanForSpeech(text)
+    if (!cleaned) {
+      setTimeout(() => { if (isMounted.current) startListening() }, 400)
+      return
+    }
 
     const utterance = new SpeechSynthesisUtterance(cleaned)
 
-    // Pick best available voice — prefer a natural English one
     const voices = window.speechSynthesis.getVoices()
-    const preferred = voices.find(v =>
-      /google|natural|enhanced|premium/i.test(v.name) && v.lang.startsWith('en')
-    ) || voices.find(v => v.lang.startsWith('en-') && !v.localService === false)
+    const preferred = voices.find(v => /google|natural|enhanced|premium/i.test(v.name) && v.lang.startsWith('en'))
       || voices.find(v => v.lang.startsWith('en'))
     if (preferred) utterance.voice = preferred
 
-    utterance.rate  = 1.0   // speed — 1.0 is normal
-    utterance.pitch = 1.0   // pitch — 1.0 is normal
+    utterance.rate   = 1.0
+    utterance.pitch  = 1.0
     utterance.volume = 1.0
 
     utterance.onend = () => {
       if (!isMounted.current) return
-      // Auto-listen after Orion finishes speaking
       setTimeout(() => { if (isMounted.current) startListening() }, 400)
     }
 
@@ -158,9 +159,9 @@ export default function CallMode({ user, onClose }) {
     }
 
     window.speechSynthesis.speak(utterance)
-  }, [])
+  }, []) // startListening added via ref below to avoid circular dep
 
-  // ── Get AI response via chat-stream ─────────────────────────────────────
+  // ── Get AI response ───────────────────────────────────────────────────────
   const askAI = useCallback(async (userText) => {
     if (!isMounted.current) return
     setPhase('thinking')
@@ -172,6 +173,7 @@ export default function CallMode({ user, onClose }) {
         message: userText,
         conversationId: conversationId.current,
         userId: user.id,
+        voiceMode: true,
       })
 
       if (!res.ok) throw new Error('Stream failed')
@@ -184,7 +186,8 @@ export default function CallMode({ user, onClose }) {
         const { value, done } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n'); buffer = lines.pop()
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
         for (const line of lines) {
           if (!line.startsWith('data:')) continue
           try {
@@ -196,7 +199,7 @@ export default function CallMode({ user, onClose }) {
             } else if (data.type === 'done') {
               if (isMounted.current) speak(fullText)
             }
-          } catch {}
+          } catch (_) {}
         }
       }
     } catch (e) {
@@ -208,7 +211,7 @@ export default function CallMode({ user, onClose }) {
     }
   }, [speak, user.id])
 
-  // ── Start listening ──────────────────────────────────────────────────────
+  // ── Start listening ───────────────────────────────────────────────────────
   const startListening = useCallback(() => {
     if (!isMounted.current) return
     setError(null)
@@ -217,15 +220,15 @@ export default function CallMode({ user, onClose }) {
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) {
-      setError('Speech recognition not supported on this browser. Try Chrome or Edge.')
+      setError('Speech recognition not supported. Use Chrome or Edge.')
       setPhase('idle')
       return
     }
 
     const rec = new SR()
-    rec.continuous = false
-    rec.interimResults = true
-    rec.lang = 'en-US'
+    rec.continuous      = false
+    rec.interimResults  = true
+    rec.lang            = 'en-US'
     recognitionRef.current = rec
 
     let finalTranscript = ''
@@ -241,25 +244,19 @@ export default function CallMode({ user, onClose }) {
 
     rec.onend = () => {
       if (!isMounted.current) return
-      if (finalTranscript.trim()) {
-        askAI(finalTranscript.trim())
-      } else {
-        // Nothing heard — go back to idle
-        setPhase('idle')
-        setTranscript('')
-      }
+      if (finalTranscript.trim()) askAI(finalTranscript.trim())
+      else { setPhase('idle'); setTranscript('') }
     }
 
     rec.onerror = (e) => {
       if (!isMounted.current) return
-      if (e.error !== 'no-speech') setError(`Mic error: ${e.error}`)
+      if (e.error !== 'no-speech') setError('Mic error: ' + e.error)
       setPhase('idle')
     }
 
     rec.start()
   }, [askAI])
 
-  // ── Interrupt AI speaking ────────────────────────────────────────────────
   function interrupt() {
     window.speechSynthesis.cancel()
     recognitionRef.current?.stop()
@@ -267,7 +264,6 @@ export default function CallMode({ user, onClose }) {
     setAiText('')
   }
 
-  // ── End call ─────────────────────────────────────────────────────────────
   function endCall() {
     window.speechSynthesis.cancel()
     recognitionRef.current?.stop()
@@ -277,9 +273,9 @@ export default function CallMode({ user, onClose }) {
 
   const phaseLabel = {
     idle:     'Tap the mic to speak',
-    listening:'Listening…',
-    thinking: 'Thinking…',
-    speaking: 'Orion is speaking',
+    listening: 'Listening…',
+    thinking:  'Thinking…',
+    speaking:  'Orion is speaking',
   }
 
   const isSpeaking  = phase === 'speaking'
@@ -295,7 +291,7 @@ export default function CallMode({ user, onClose }) {
       animation: 'call-fade-in 0.3s ease both',
     }}>
 
-      {/* Top — call info */}
+      {/* Top */}
       <div style={{ textAlign: 'center' }}>
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
           Voice Call
@@ -308,32 +304,25 @@ export default function CallMode({ user, onClose }) {
         </div>
       </div>
 
-      {/* Middle — orb + transcript */}
+      {/* Middle */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32, flex: 1, justifyContent: 'center' }}>
         <OrionOrb speaking={isSpeaking} listening={isListening} />
 
-        {/* Status label */}
         <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.85rem', minHeight: 20 }}>
           {phaseLabel[phase]}
         </div>
 
-        {/* Waveform */}
         <Waveform active={isSpeaking || isListening} color={isListening ? '#63d2ff' : '#fff'} />
 
-        {/* Transcript / AI response */}
-        <div style={{
-          maxWidth: 320, width: '100%', minHeight: 56,
-          textAlign: 'center', padding: '0 8px',
-        }}>
+        <div style={{ maxWidth: 320, width: '100%', minHeight: 56, textAlign: 'center', padding: '0 8px' }}>
           {phase === 'listening' && transcript && (
             <div style={{ color: '#63d2ff', fontSize: '0.92rem', lineHeight: 1.5, fontStyle: 'italic' }}>
               "{transcript}"
             </div>
           )}
-          {(phase === 'thinking') && (
+          {phase === 'thinking' && (
             <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>
-              <span style={{ display: 'inline-block', animation: 'pulse-ring 1s ease infinite' }}>●</span>
-              {' '}Processing your message…
+              Processing…
             </div>
           )}
           {phase === 'speaking' && aiText && (
@@ -347,10 +336,8 @@ export default function CallMode({ user, onClose }) {
         </div>
       </div>
 
-      {/* Bottom — call controls */}
+      {/* Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-
-        {/* Interrupt / Mute button */}
         <button
           onClick={isSpeaking ? interrupt : undefined}
           style={{
@@ -358,8 +345,7 @@ export default function CallMode({ user, onClose }) {
             background: isSpeaking ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
             color: isSpeaking ? '#fff' : 'rgba(255,255,255,0.25)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: isSpeaking ? 'pointer' : 'not-allowed',
-            transition: 'all 0.2s',
+            cursor: isSpeaking ? 'pointer' : 'not-allowed', transition: 'all 0.2s',
           }}
           title="Interrupt"
         >
@@ -369,7 +355,6 @@ export default function CallMode({ user, onClose }) {
           </svg>
         </button>
 
-        {/* Main mic / action button */}
         <button
           onClick={phase === 'idle' ? startListening : phase === 'listening' ? () => recognitionRef.current?.stop() : undefined}
           style={{
@@ -379,12 +364,11 @@ export default function CallMode({ user, onClose }) {
               : 'linear-gradient(135deg, #007AFF, #5856d6)',
             color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: phase === 'thinking' || phase === 'speaking' ? 'not-allowed' : 'pointer',
+            cursor: (phase === 'thinking' || phase === 'speaking') ? 'not-allowed' : 'pointer',
             boxShadow: isListening ? '0 0 0 8px rgba(52,199,89,0.2)' : '0 0 0 8px rgba(0,122,255,0.2)',
             transition: 'all 0.3s',
             opacity: (phase === 'thinking' || phase === 'speaking') ? 0.5 : 1,
           }}
-          title={phase === 'idle' ? 'Start speaking' : phase === 'listening' ? 'Stop' : ''}
         >
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="9" y="2" width="6" height="13" rx="3"/>
@@ -394,16 +378,13 @@ export default function CallMode({ user, onClose }) {
           </svg>
         </button>
 
-        {/* End call button */}
         <button
           onClick={endCall}
           style={{
             width: 52, height: 52, borderRadius: '50%', border: 'none',
-            background: '#ff3b30',
-            color: '#fff',
+            background: '#ff3b30', color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(255,59,48,0.35)',
+            cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,59,48,0.35)',
             transition: 'all 0.2s',
           }}
           title="End call"
