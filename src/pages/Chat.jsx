@@ -179,18 +179,71 @@ const CSS = `
   .status-dot.loading { background:#007AFF; animation:pulse 1s infinite; }
   .status-text { font-size:0.72rem; color:#b0bac8; }
 
-  /* ── Mobile ── */
+  /* ── Mobile — WhatsApp-style fixed layout ── */
   @media (max-width:768px) {
+    /* Sidebar slides in as overlay */
     .sidebar {
-      position:fixed; left:0; top:0; width:272px; height:100vh;
-      z-index:1000; transform:translateX(-100%); transition:transform 0.3s ease;
+      position:fixed; left:0; top:0; width:280px; height:100%;
+      z-index:1000; transform:translateX(-100%); transition:transform 0.28s ease;
     }
-    .sidebar.open { transform:translateX(0); }
+    .sidebar.open { transform:translateX(0); box-shadow: 4px 0 32px rgba(0,0,0,0.18); }
     .hamburger { display:block; }
-    .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.2); backdrop-filter:blur(4px); z-index:999; }
+    .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.25); backdrop-filter:blur(2px); z-index:999; }
     .overlay.open { display:block; }
-    .chat-area { padding:20px 16px; }
-    .input-area { padding:12px 16px 16px; }
+
+    /* Main fills entire screen */
+    .main {
+      position:fixed; inset:0;
+      display:flex; flex-direction:column;
+      height:100%; width:100%;
+    }
+
+    /* Top bar — fixed at top, never scrolls */
+    .chat-header {
+      flex-shrink:0;
+      position:sticky; top:0; z-index:10;
+      padding:12px 16px;
+      background: rgba(255,255,255,0.88);
+      backdrop-filter: blur(20px) saturate(200%);
+      -webkit-backdrop-filter: blur(20px) saturate(200%);
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      min-height:56px;
+    }
+
+    /* Message area — scrolls independently */
+    .chat-area {
+      flex:1;
+      overflow-y:auto;
+      overflow-x:hidden;
+      padding:12px 12px 8px;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+    }
+
+    /* Input area — fixed at bottom, rises with keyboard */
+    .input-area {
+      flex-shrink:0;
+      position:sticky; bottom:0;
+      padding:8px 12px 12px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(20px) saturate(200%);
+      -webkit-backdrop-filter: blur(20px) saturate(200%);
+      border-top: 1px solid rgba(0,0,0,0.07);
+      /* Rise above keyboard on iOS/Android */
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+
+    /* Tighter input box on mobile */
+    .input-box { border-radius:24px; padding:8px 8px 8px 14px; }
+    .input-textarea { font-size:1rem; }
+    .send-btn { width:40px; height:40px; border-radius:50%; }
+
+    /* File chip smaller */
+    .file-chip { margin-bottom:8px; }
+    .file-chip-name { max-width:150px; }
+
+    /* Status row smaller */
+    .status-row { padding-top:4px; }
   }
 `
 
@@ -216,6 +269,79 @@ export default function Chat() {
   const chatAreaRef = useRef(null)
   const textareaRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  // Typewriter queue — chunks arrive fast from the stream,
+  // we drain them at a natural reading pace like Claude/ChatGPT
+  const typeQueueRef = useRef([])     // pending characters to render
+  const typeTimerRef = useRef(null)   // requestAnimationFrame id
+  const typeDisplayRef = useRef('')   // what's currently shown on screen
+  const typeDoneRef = useRef(false)   // true when stream has finished sending
+
+  function startTypewriter() {
+    if (typeTimerRef.current) return // already running
+
+    const TARGET_CPS = 38  // characters per second — feels natural, not too slow
+
+    let lastTime = null
+    let charBudget = 0
+
+    function tick(now) {
+      if (!lastTime) lastTime = now
+      const elapsed = now - lastTime
+      lastTime = now
+
+      charBudget += (elapsed / 1000) * TARGET_CPS
+
+      // Drain up to charBudget characters from the queue this frame
+      const queue = typeQueueRef.current
+      let rendered = 0
+      while (queue.length > 0 && charBudget >= 1) {
+        typeDisplayRef.current += queue.shift()
+        charBudget -= 1
+        rendered++
+      }
+
+      if (rendered > 0) {
+        const text = typeDisplayRef.current
+        setMessages(prev => {
+          const n = [...prev]
+          n[n.length - 1] = { role: 'assistant', content: text, streaming: true }
+          return n
+        })
+      }
+
+      // Keep animating if there's more in the queue,
+      // or if stream isn't done yet (more chunks coming)
+      if (queue.length > 0 || !typeDoneRef.current) {
+        typeTimerRef.current = requestAnimationFrame(tick)
+      } else {
+        // Stream done AND queue empty — finalize
+        typeTimerRef.current = null
+        const final = typeDisplayRef.current
+        setMessages(prev => {
+          const n = [...prev]
+          n[n.length - 1] = { role: 'assistant', content: final, streaming: false }
+          return n
+        })
+        setStatus('Ready')
+        setStatusLoading(false)
+        load()
+        removeFile()
+      }
+    }
+
+    typeTimerRef.current = requestAnimationFrame(tick)
+  }
+
+  function resetTypewriter() {
+    if (typeTimerRef.current) {
+      cancelAnimationFrame(typeTimerRef.current)
+      typeTimerRef.current = null
+    }
+    typeQueueRef.current = []
+    typeDisplayRef.current = ''
+    typeDoneRef.current = false
+  }
 
   // Load conversations then restore last active one from localStorage
   useEffect(() => {
@@ -313,6 +439,34 @@ export default function Chat() {
     const text = input.trim()
     if (!text || isStreaming) return
 
+    // If user has an image uploaded — classify whether they want to EDIT or ANALYSE it
+    if (isImageFile && imageUrl) {
+      // Strong analysis signals — always route to chat regardless of anything else
+      const analysisKeywords = [
+        'what', 'who', 'where', 'when', 'why', 'how many', 'describe', 'explain',
+        'identify', 'tell me', 'analyse', 'analyze', 'read', 'extract', 'transcribe',
+        'summarize', 'summarise', 'caption', 'detect', 'find', 'is there', 'are there',
+        'count', 'list', 'show me', 'can you see', 'do you see', 'look at', 'check'
+      ]
+      // Strong edit signals — only route to edit if NO analysis keywords present
+      const editKeywords = [
+        'edit', 'change', 'modify', 'make it', 'turn it', 'convert', 'add a', 'add the',
+        'remove the', 'remove a', 'replace', 'apply', 'transform', 'adjust', 'crop',
+        'blur', 'sharpen', 'make the background', 'change the color', 'change the colour',
+        'make him', 'make her', 'make them', 'make the', 'put a', 'put the', 'give it',
+        'give him', 'give her', 'style it', 'filter', 'brighter', 'darker', 'lighter'
+      ]
+      const lower = text.toLowerCase()
+      const wantsAnalysis = analysisKeywords.some(k => lower.includes(k))
+      const wantsEdit = !wantsAnalysis && editKeywords.some(k => lower.includes(k))
+
+      if (wantsEdit) {
+        await handleImageEdit(text, text)
+        return
+      }
+      // wantsAnalysis OR ambiguous — fall through to normal chat which handles image analysis
+    }
+
     if (!uploadedFile) {
       try {
         const intent = await callEdgeFunction('classify-intent', { message: text })
@@ -335,7 +489,7 @@ export default function Chat() {
       if (!res.ok) throw new Error('Stream failed')
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = '', accumulated = ''
+      let buffer = ''
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
@@ -352,11 +506,13 @@ export default function Chat() {
             } else if (data.type === 'searching') {
               setStatus('🔍 Searching the web…')
             } else if (data.type === 'delta') {
-              accumulated += data.text
-              setMessages(prev => { const n=[...prev]; n[n.length-1]={role:'assistant',content:accumulated,streaming:true}; return n })
+              // Push each character into the queue — typewriter drains it at natural speed
+              for (const char of data.text) typeQueueRef.current.push(char)
+              startTypewriter()
             } else if (data.type === 'done') {
-              setMessages(prev => { const n=[...prev]; n[n.length-1]={role:'assistant',content:accumulated,streaming:false}; return n })
-              setStatus('Ready'); setStatusLoading(false); load(); removeFile()
+              // Signal typewriter that no more chunks are coming
+              // It will finalize once the queue is empty
+              typeDoneRef.current = true
             }
           } catch {}
         }
@@ -383,6 +539,32 @@ export default function Chat() {
     } catch (err) {
       setMessages(prev => { const n=[...prev]; n[n.length-1]={role:'assistant',content:'⚠ Image generation failed: '+err.message,streaming:false}; return n })
     } finally { setStatus('Ready'); setStatusLoading(false) }
+  }
+
+  async function handleImageEdit(userText, instruction) {
+    setInput('')
+    setMessages(prev => [...prev, { role:'user', content:`🖼️ Edit image: ${instruction}` }])
+    setMessages(prev => [...prev, { role:'assistant', content:'⏳ Editing image…', streaming:false }])
+    setStatus('Editing image…'); setStatusLoading(true)
+    try {
+      const data = await callEdgeFunction('edit-image', {
+        imageUrl: imageUrl,
+        instruction,
+        userId: user.id,
+      })
+      if (!data.success) throw new Error(data.error || 'Edit failed')
+      const imgUrl = data.image_url || `data:image/jpeg;base64,${data.image_data}`
+      setMessages(prev => { const n=[...prev]; n[n.length-1]={ role:'assistant', content:`__IMAGE__${imgUrl}__PROMPT__Edited: ${instruction}`, streaming:false }; return n })
+      await callEdgeFunction('save-image-messages', {
+        conversationId, userId: user.id,
+        userMessage: `Edit image: ${instruction}`,
+        assistantMessage: `Edited image: "${instruction}"
+![image](${imgUrl})`
+      })
+      load()
+    } catch (err) {
+      setMessages(prev => { const n=[...prev]; n[n.length-1]={ role:'assistant', content:'⚠ Image edit failed: '+err.message, streaming:false }; return n })
+    } finally { removeFile(); setStatus('Ready'); setStatusLoading(false) }
   }
 
   function handleKeyDown(e) {
@@ -475,7 +657,7 @@ export default function Chat() {
                 value={input}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Message Orion…"
+                placeholder={isImageFile && imageUrl ? "Describe how to edit this image…" : "Message Orion…"}
                 rows={1}
               />
               <div className="input-actions">
