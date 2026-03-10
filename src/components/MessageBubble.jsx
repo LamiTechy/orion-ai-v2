@@ -193,12 +193,18 @@ function buildReactPreview(files) {
   ].join('\n')
 }
 
-// ── Preview Modal ─────────────────────────────────────────────────────────
-function PreviewModal({ files, type, onClose }) {
+// ── Preview Slide-in Panel ────────────────────────────────────────────────
+function PreviewPanel({ files, type, onClose }) {
   const iframeRef = useRef(null)
   const [device, setDevice] = useState('desktop')
+  const [visible, setVisible] = useState(false)
 
   const htmlContent = type === 'html' ? buildHTMLPreview(files) : buildReactPreview(files)
+
+  useEffect(() => {
+    // Trigger slide-in animation
+    requestAnimationFrame(() => setVisible(true))
+  }, [])
 
   useEffect(() => {
     if (!iframeRef.current || !htmlContent) return
@@ -206,50 +212,102 @@ function PreviewModal({ files, type, onClose }) {
     if (doc) { doc.open(); doc.write(htmlContent); doc.close() }
   }, [htmlContent, device])
 
-  const widths = { desktop: '100%', tablet: '768px', mobile: '375px' }
+  function handleClose() {
+    setVisible(false)
+    setTimeout(onClose, 280)
+  }
+
+  const iframeWidths = { desktop: '100%', tablet: '768px', mobile: '375px' }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 16,
-    }}>
-      <div style={{ width: '100%', maxWidth: 1100, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[['desktop','🖥 Desktop'],['tablet','⬛ Tablet'],['mobile','📱 Mobile']].map(([d, label]) => (
-            <button key={d} onClick={() => setDevice(d)} style={{
-              padding: '6px 14px', borderRadius: 100, border: 'none', cursor: 'pointer',
-              background: device === d ? '#007AFF' : 'rgba(255,255,255,0.12)',
-              color: device === d ? '#fff' : 'rgba(255,255,255,0.75)',
-              fontSize: '0.78rem', fontWeight: 500, transition: 'all 0.2s',
-            }}>{label}</button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.75rem' }}>
-            {type === 'react' ? 'React Preview' : 'HTML Preview'}
-          </span>
-          <button onClick={onClose} style={{
-            background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff',
-            width: 32, height: 32, borderRadius: '50%', cursor: 'pointer',
-            fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>×</button>
-        </div>
-      </div>
+    <>
+      <style>{`
+        @keyframes panelIn { from { transform: translateX(100%); opacity:0 } to { transform: translateX(0); opacity:1 } }
+        @keyframes panelOut { from { transform: translateX(0); opacity:1 } to { transform: translateX(100%); opacity:0 } }
+        .preview-panel { animation: panelIn 0.28s cubic-bezier(0.32,0.72,0,1) both; }
+        .preview-panel.closing { animation: panelOut 0.28s cubic-bezier(0.32,0.72,0,1) both; }
+      `}</style>
 
-      <div style={{
-        width: '100%', maxWidth: 1100, flex: 1, background: '#fff', borderRadius: 16,
-        overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
-        display: 'flex', justifyContent: 'center',
+      {/* Dim overlay — clicking it closes panel */}
+      <div onClick={handleClose} style={{
+        position: 'fixed', inset: 0, zIndex: 9998,
+        background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(2px)',
+        opacity: visible ? 1 : 0, transition: 'opacity 0.28s',
+      }} />
+
+      {/* Panel */}
+      <div className={'preview-panel' + (visible ? '' : ' closing')} style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0,
+        width: 'min(780px, 100vw)', zIndex: 9999,
+        display: 'flex', flexDirection: 'column',
+        background: 'rgba(248,249,252,0.98)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        boxShadow: '-8px 0 48px rgba(0,0,0,0.18)',
+        borderLeft: '1px solid rgba(255,255,255,0.7)',
       }}>
-        <iframe
-          ref={iframeRef}
-          title="preview"
-          sandbox="allow-scripts allow-same-origin"
-          style={{ width: widths[device], maxWidth: '100%', height: '100%', border: 'none', transition: 'width 0.3s' }}
-        />
+        {/* Panel header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px',
+          background: 'rgba(255,255,255,0.7)',
+          borderBottom: '1px solid rgba(0,0,0,0.07)',
+          backdropFilter: 'blur(12px)',
+          flexShrink: 0,
+        }}>
+          {/* Device switcher */}
+          <div style={{ display: 'flex', gap: 6, background: 'rgba(0,0,0,0.05)', borderRadius: 10, padding: 3 }}>
+            {[['desktop','🖥'],['tablet','⬜'],['mobile','📱']].map(([d, icon]) => (
+              <button key={d} onClick={() => setDevice(d)} title={d} style={{
+                padding: '5px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                background: device === d ? '#fff' : 'transparent',
+                boxShadow: device === d ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
+                fontSize: '0.78rem', fontWeight: 500, color: device === d ? '#1a1d23' : '#8a95a8',
+                transition: 'all 0.15s',
+              }}>{icon} {d.charAt(0).toUpperCase() + d.slice(1)}</button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <span style={{
+              fontSize: '0.72rem', color: '#b0bac8', fontWeight: 500,
+              background: type === 'react' ? 'rgba(0,122,255,0.08)' : 'rgba(52,199,89,0.08)',
+              color: type === 'react' ? '#007AFF' : '#1a7a35',
+              padding: '3px 10px', borderRadius: 100,
+              border: type === 'react' ? '1px solid rgba(0,122,255,0.2)' : '1px solid rgba(52,199,89,0.2)',
+            }}>
+              {type === 'react' ? '⚛ React' : '🌐 HTML'}
+            </span>
+            <button onClick={handleClose} style={{
+              background: 'rgba(0,0,0,0.05)', border: 'none', color: '#4a5568',
+              width: 30, height: 30, borderRadius: '50%', cursor: 'pointer',
+              fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.15s',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,59,48,0.1)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.05)'}
+            >×</button>
+          </div>
+        </div>
+
+        {/* iframe area */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', justifyContent: 'center', background: '#e5e7eb', padding: device === 'desktop' ? 0 : '16px' }}>
+          <div style={{
+            width: iframeWidths[device], height: '100%',
+            background: '#fff',
+            boxShadow: device !== 'desktop' ? '0 8px 32px rgba(0,0,0,0.18)' : 'none',
+            borderRadius: device !== 'desktop' ? 12 : 0,
+            overflow: 'hidden', transition: 'all 0.3s',
+          }}>
+            <iframe
+              ref={iframeRef}
+              title="preview"
+              sandbox="allow-scripts allow-same-origin"
+              style={{ width: '100%', height: '100%', border: 'none' }}
+            />
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -272,7 +330,7 @@ function PreviewButton({ files, type }) {
         </svg>
         Preview
       </button>
-      {open && <PreviewModal files={files} type={type} onClose={() => setOpen(false)} />}
+      {open && <PreviewPanel files={files} type={type} onClose={() => setOpen(false)} />}
     </>
   )
 }
