@@ -227,6 +227,7 @@ export default function Chat() {
   const [imageUrl, setImageUrl]           = useState(null)
   const [isListening, setIsListening]     = useState(false)
   const [callActive, setCallActive]       = useState(false)
+  const [preview, setPreview]             = useState(null)
   const [githubUser, setGithubUser]       = useState(null)
   const [githubLoading, setGithubLoading] = useState(false)
 
