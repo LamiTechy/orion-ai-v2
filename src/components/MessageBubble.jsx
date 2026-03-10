@@ -193,129 +193,27 @@ function buildReactPreview(files) {
   ].join('\n')
 }
 
-// ── Preview Slide-in Panel (Claude-style artifact panel) ──────────────────
-function PreviewPanel({ files, type, onClose }) {
-  const iframeRef = useRef(null)
-  const [device, setDevice] = useState('desktop')
-  const [visible, setVisible] = useState(false)
-
-  const htmlContent = type === 'html' ? buildHTMLPreview(files) : buildReactPreview(files)
-
-  useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
-
-  useEffect(() => {
-    if (!iframeRef.current || !htmlContent) return
-    const doc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document
-    if (doc) { doc.open(); doc.write(htmlContent); doc.close() }
-  }, [htmlContent, device])
-
-  function handleClose() {
-    setVisible(false)
-    setTimeout(onClose, 280)
-  }
-
-  const iframeWidths = { desktop: '100%', tablet: '420px', mobile: '320px' }
-
-  // Mount into the #orion-preview-root portal that Chat.jsx provides
-  const portalTarget = document.getElementById('orion-preview-root')
-  if (!portalTarget) return null
-
-  const panel = (
-    <>
-      <style>{`
-        @keyframes artifactIn  { from { transform:translateX(100%); opacity:0 } to { transform:translateX(0); opacity:1 } }
-        @keyframes artifactOut { from { transform:translateX(0); opacity:1 } to { transform:translateX(100%); opacity:0 } }
-        .artifact-panel         { animation: artifactIn  0.26s cubic-bezier(0.32,0.72,0,1) both; }
-        .artifact-panel.closing { animation: artifactOut 0.26s cubic-bezier(0.32,0.72,0,1) both; }
-      `}</style>
-      <div className={'artifact-panel' + (visible ? '' : ' closing')} style={{
-        width: '100%', height: '100%',
-        display: 'flex', flexDirection: 'column',
-        background: 'rgba(250,251,253,0.98)',
-        backdropFilter: 'blur(20px)',
-        borderLeft: '1px solid rgba(0,0,0,0.08)',
-      }}>
-        {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 14px', flexShrink: 0,
-          background: 'rgba(255,255,255,0.8)',
-          borderBottom: '1px solid rgba(0,0,0,0.07)',
-          backdropFilter: 'blur(12px)',
-        }}>
-          <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.05)', borderRadius: 10, padding: 3 }}>
-            {[['desktop','🖥'],['tablet','⬜'],['mobile','📱']].map(([d, icon]) => (
-              <button key={d} onClick={() => setDevice(d)} style={{
-                padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                background: device === d ? '#fff' : 'transparent',
-                boxShadow: device === d ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
-                fontSize: '0.75rem', fontWeight: 500,
-                color: device === d ? '#1a1d23' : '#8a95a8',
-                transition: 'all 0.15s',
-              }}>{icon} {d.charAt(0).toUpperCase() + d.slice(1)}</button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{
-              fontSize: '0.7rem', fontWeight: 500, padding: '3px 9px', borderRadius: 100,
-              background: type === 'react' ? 'rgba(0,122,255,0.08)' : 'rgba(52,199,89,0.08)',
-              color: type === 'react' ? '#007AFF' : '#1a7a35',
-              border: type === 'react' ? '1px solid rgba(0,122,255,0.18)' : '1px solid rgba(52,199,89,0.18)',
-            }}>{type === 'react' ? '⚛ React' : '🌐 HTML'}</span>
-            <button onClick={handleClose} style={{
-              background: 'rgba(0,0,0,0.05)', border: 'none', color: '#4a5568',
-              width: 28, height: 28, borderRadius: '50%', cursor: 'pointer',
-              fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 0.15s',
-            }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,59,48,0.1)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.05)'}
-            >×</button>
-          </div>
-        </div>
-
-        {/* iframe */}
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#e5e7eb', padding: device === 'desktop' ? 0 : 16 }}>
-          <div style={{
-            width: iframeWidths[device], height: '100%',
-            background: '#fff',
-            boxShadow: device !== 'desktop' ? '0 8px 32px rgba(0,0,0,0.15)' : 'none',
-            borderRadius: device !== 'desktop' ? 16 : 0,
-            overflow: 'hidden', transition: 'all 0.3s',
-          }}>
-            <iframe ref={iframeRef} title="preview" sandbox="allow-scripts allow-same-origin"
-              style={{ width: '100%', height: '100%', border: 'none' }} />
-          </div>
-        </div>
-      </div>
-    </>
-  )
-
-  const { createPortal } = window.__reactDom || {}
-  return createPortal ? createPortal(panel, portalTarget) : panel
-}
-
+// ── Preview Button — fires event to Chat.jsx which owns the panel ────────
 function PreviewButton({ files, type }) {
-  const [open, setOpen] = useState(false)
+  function openPreview() {
+    window.dispatchEvent(new CustomEvent('orion:preview', { detail: { files, type } }))
+  }
   return (
-    <>
-      <button onClick={() => setOpen(true)} style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7,
-        padding: '9px 18px', marginTop: 14, marginRight: 8,
-        background: 'rgba(88,86,214,0.08)', border: '1px solid rgba(88,86,214,0.2)',
-        borderRadius: 100, color: '#5856d6', cursor: 'pointer',
-        fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
-      }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(88,86,214,0.15)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(88,86,214,0.08)'; e.currentTarget.style.transform = 'none' }}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="5 3 19 12 5 21 5 3"/>
-        </svg>
-        Preview
-      </button>
-      {open && <PreviewPanel files={files} type={type} onClose={() => setOpen(false)} />}
-    </>
+    <button onClick={openPreview} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 7,
+      padding: '9px 18px', marginTop: 14, marginRight: 8,
+      background: 'rgba(88,86,214,0.08)', border: '1px solid rgba(88,86,214,0.2)',
+      borderRadius: 100, color: '#5856d6', cursor: 'pointer',
+      fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(88,86,214,0.15)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(88,86,214,0.08)'; e.currentTarget.style.transform = 'none' }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+      Preview
+    </button>
   )
 }
 

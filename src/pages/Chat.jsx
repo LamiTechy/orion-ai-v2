@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import { useAuth } from '../context/AuthContext'
 import { useConversations } from '../hooks/useConversations'
 import { streamEdgeFunction, callEdgeFunction, supabase } from '../lib/supabase'
 import MessageBubble from '../components/MessageBubble'
 import CallMode from '../components/CallMode'
+import PreviewPanel from '../components/PreviewPanel'
 
 const CSS = `
   .chat-app {
@@ -356,21 +356,17 @@ export default function Chat() {
     setGithubUser(null)
   }
 
-  // Track when preview panel has content
+  // Listen for preview events from MessageBubble
   useEffect(() => {
-    const el = document.getElementById('orion-preview-root')
-    if (!el) return
-    const obs = new MutationObserver(() => setPreviewOpen(el.children.length > 0))
-    obs.observe(el, { childList: true })
-    return () => obs.disconnect()
+    const handler = (e) => setPreview(e.detail)
+    window.addEventListener('orion:preview', handler)
+    return () => window.removeEventListener('orion:preview', handler)
   }, [])
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => { chatAreaRef.current?.scrollTo({ top: chatAreaRef.current.scrollHeight, behavior: 'smooth' }) }, 0)
   }, [])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
-
-  useEffect(() => { window.__reactDom = { createPortal } }, [])
 
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -718,7 +714,9 @@ export default function Chat() {
           </div>
         </div>
           {/* Preview panel mounts here */}
-          <div id="orion-preview-root" style={{ width: previewOpen ? 'min(52%, 700px)' : 0, flexShrink: 0, overflow: 'hidden', transition: 'width 0.28s cubic-bezier(0.32,0.72,0,1)', position: 'relative' }} />
+          <div style={{ width: preview ? 'min(52%, 700px)' : 0, flexShrink: 0, overflow: 'hidden', transition: 'width 0.28s cubic-bezier(0.32,0.72,0,1)', position: 'relative' }}>
+            {preview && <PreviewPanel files={preview.files} type={preview.type} onClose={() => setPreview(null)} />}
+          </div>
         </div>{/* end split row */}
       </div>{/* end chat-app */}
       {callActive && <CallMode user={user} onClose={()=>setCallActive(false)} />}
