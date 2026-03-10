@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 function buildHTMLPreview(files) {
   const html = files.find(f => f.path?.endsWith('.html') || f.lang === 'html')
@@ -47,7 +47,6 @@ function buildReactPreview(files) {
 
 export default function PreviewPanel({ files, type, onClose }) {
   const iframeRef = useRef(null)
-  const [device, setDevice] = useState('desktop')
 
   const htmlContent = type === 'html' ? buildHTMLPreview(files) : buildReactPreview(files)
 
@@ -55,9 +54,7 @@ export default function PreviewPanel({ files, type, onClose }) {
     if (!iframeRef.current || !htmlContent) return
     const doc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document
     if (doc) { doc.open(); doc.write(htmlContent); doc.close() }
-  }, [htmlContent, device])
-
-  const iframeWidths = { desktop: '100%', tablet: '420px', mobile: '320px' }
+  }, [htmlContent])
 
   return (
     <div style={{
@@ -73,18 +70,7 @@ export default function PreviewPanel({ files, type, onClose }) {
         background: 'rgba(255,255,255,0.9)',
         borderBottom: '1px solid rgba(0,0,0,0.07)',
       }}>
-        <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.05)', borderRadius: 10, padding: 3 }}>
-          {[['desktop','🖥 Desktop'],['tablet','⬜ Tablet'],['mobile','📱 Mobile']].map(([d, label]) => (
-            <button key={d} onClick={() => setDevice(d)} style={{
-              padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
-              background: device === d ? '#fff' : 'transparent',
-              boxShadow: device === d ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
-              fontSize: '0.75rem', fontWeight: 500,
-              color: device === d ? '#1a1d23' : '#8a95a8',
-              transition: 'all 0.15s',
-            }}>{label}</button>
-          ))}
-        </div>
+        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1a1d23', padding: '4px 2px' }}>🖥 Desktop Preview</span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{
             fontSize: '0.7rem', fontWeight: 500, padding: '3px 9px', borderRadius: 100,
@@ -104,16 +90,9 @@ export default function PreviewPanel({ files, type, onClose }) {
       </div>
 
       {/* iframe */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#e5e7eb', padding: device === 'desktop' ? 0 : 16 }}>
-        <div style={{
-          width: iframeWidths[device], height: '100%', background: '#fff',
-          boxShadow: device !== 'desktop' ? '0 8px 32px rgba(0,0,0,0.15)' : 'none',
-          borderRadius: device !== 'desktop' ? 16 : 0,
-          overflow: 'hidden', transition: 'all 0.3s',
-        }}>
-          <iframe ref={iframeRef} title="preview" sandbox="allow-scripts allow-same-origin"
-            style={{ width: '100%', height: '100%', border: 'none' }} />
-        </div>
+      <div style={{ flex: 1, overflow: 'hidden', background: '#fff' }}>
+        <iframe ref={iframeRef} title="preview" sandbox="allow-scripts allow-same-origin"
+          style={{ width: '100%', height: '100%', border: 'none' }} />
       </div>
     </div>
   )
