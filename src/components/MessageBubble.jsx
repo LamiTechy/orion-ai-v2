@@ -116,11 +116,6 @@ function parseCodeFiles(content) {
   return files
 }
 
-function shouldShowZip(files) {
-  if (files.length < 2) return false
-  return files.reduce((sum, f) => sum + f.content.split('\n').length, 0) >= 15
-}
-
 function deriveProjectName(files) {
   // Use folder prefix if files have path structure
   const named = files.filter(f => f.path && f.path.includes('/'))
@@ -242,58 +237,6 @@ function PreviewButton({ files, type }) {
 }
 
 // ── ZIP Button ─────────────────────────────────────────────────────────────
-function ZipButton({ files, projectName }) {
-  const [state, setState] = useState('idle')
-
-  async function downloadZip() {
-    setState('loading')
-    try {
-      const session = await supabase.auth.getSession()
-      const token = session.data.session?.access_token
-      const res = await fetch(import.meta.env.VITE_SUPABASE_URL + '/functions/v1/generate-zip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-        body: JSON.stringify({ files, projectName }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = blobUrl; a.download = projectName + '.zip'; a.click()
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000)
-      setState('done'); setTimeout(() => setState('idle'), 3000)
-    } catch (err) {
-      console.error('ZIP error:', err)
-      setState('error'); setTimeout(() => setState('idle'), 3000)
-    }
-  }
-
-  const cfgs = {
-    idle:    { label: 'Download ZIP',   bg: 'rgba(0,122,255,0.08)',  color: '#007AFF', border: 'rgba(0,122,255,0.2)' },
-    loading: { label: 'Building…',      bg: 'rgba(0,122,255,0.05)',  color: '#007AFF', border: 'rgba(0,122,255,0.15)' },
-    done:    { label: '✓ Downloaded',   bg: 'rgba(52,199,89,0.1)',   color: '#1a7a35', border: 'rgba(52,199,89,0.25)' },
-    error:   { label: 'Failed — retry', bg: 'rgba(255,59,48,0.08)',  color: '#cc2200', border: 'rgba(255,59,48,0.2)' },
-  }
-  const cfg = cfgs[state]
-
-  return (
-    <button onClick={downloadZip} disabled={state === 'loading'} style={{
-      display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', marginTop: 14,
-      background: cfg.bg, border: '1px solid ' + cfg.border, borderRadius: 100, color: cfg.color,
-      cursor: state === 'loading' ? 'not-allowed' : 'pointer',
-      fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
-    }}
-      onMouseEnter={e => { if (state === 'idle') { e.currentTarget.style.background = 'rgba(0,122,255,0.14)'; e.currentTarget.style.transform = 'translateY(-1px)' }}}
-      onMouseLeave={e => { e.currentTarget.style.background = cfg.bg; e.currentTarget.style.transform = 'none' }}
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-      {cfg.label}
-      {state === 'idle' && <span style={{ fontSize: '0.72rem', opacity: 0.6, marginLeft: 2 }}>{files.length} file{files.length !== 1 ? 's' : ''}</span>}
-    </button>
-  )
-}
-
 async function downloadImage(imgUrl) {
   try {
     const res = await fetch(imgUrl); const blob = await res.blob()
@@ -338,7 +281,6 @@ export default function MessageBubble({ role, content, streaming }) {
 
   const codeFiles = (!streaming && isAI && !imageMatch && !storedImgMatch && typeof content === 'string')
     ? parseCodeFiles(content) : []
-  const showZip = shouldShowZip(codeFiles)
   const projectName = deriveProjectName(codeFiles)
   const previewable = (!streaming && isAI) ? getPreviewable(codeFiles) : null
 
@@ -400,11 +342,10 @@ export default function MessageBubble({ role, content, streaming }) {
   if (isAI) return (
     <div style={wrapStyle}>
       <div style={avatarStyle}>O</div>
-      <div style={{ ...bubbleStyle, padding: (showZip || previewable) ? '11px 15px 15px' : '11px 15px' }} className="bubble" ref={bubbleRef}>
+      <div style={{ ...bubbleStyle, padding: previewable ? '11px 15px 15px' : '11px 15px' }} className="bubble" ref={bubbleRef}>
         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
         <div style={{ display: 'flex', flexWrap: 'wrap' }}>
           {previewable && <PreviewButton files={codeFiles} type={previewable.type} />}
-          {showZip && <ZipButton files={codeFiles} projectName={projectName} />}
         </div>
       </div>
     </div>
