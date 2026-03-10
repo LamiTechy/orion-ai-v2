@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../context/AuthContext'
 import { useConversations } from '../hooks/useConversations'
 import { streamEdgeFunction, callEdgeFunction, supabase } from '../lib/supabase'
@@ -355,10 +356,21 @@ export default function Chat() {
     setGithubUser(null)
   }
 
+  // Track when preview panel has content
+  useEffect(() => {
+    const el = document.getElementById('orion-preview-root')
+    if (!el) return
+    const obs = new MutationObserver(() => setPreviewOpen(el.children.length > 0))
+    obs.observe(el, { childList: true })
+    return () => obs.disconnect()
+  }, [])
+
   const scrollToBottom = useCallback(() => {
     setTimeout(() => { chatAreaRef.current?.scrollTo({ top: chatAreaRef.current.scrollHeight, behavior: 'smooth' }) }, 0)
   }, [])
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
+
+  useEffect(() => { window.__reactDom = { createPortal } }, [])
 
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -447,7 +459,7 @@ export default function Chat() {
 
     resetTypewriter()
     setIsStreaming(true); setInput('')
-    setMessages(prev => [...prev, { role: 'user',  content: uploadedFile ? `📎 ${uploadedFile.name}\n${text}` : text }])
+    setMessages(prev => [...prev, { role: 'user', content: uploadedFile ? `📎 ${uploadedFile.name}\n${text}` : text }])
     setStatus('Thinking…'); setStatusLoading(true)
     setMessages(prev => [...prev, { role: 'assistant', content: '', streaming: true }])
 
@@ -606,8 +618,9 @@ export default function Chat() {
           </div>
         </div>
 
-        {/* Main */}
-        <div className="main">
+        {/* Main + Preview split */}
+        <div style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+        <div className="main" style={{ flex: 1, minWidth: 0 }}>
           <div className="chat-header">
             <div className="header-left">
               <button className="hamburger" onClick={()=>setSidebarOpen(v=>!v)}>☰</button>
@@ -704,9 +717,11 @@ export default function Chat() {
             </div>
           </div>
         </div>
-      </div>
+          {/* Preview panel mounts here */}
+          <div id="orion-preview-root" style={{ width: previewOpen ? 'min(52%, 700px)' : 0, flexShrink: 0, overflow: 'hidden', transition: 'width 0.28s cubic-bezier(0.32,0.72,0,1)', position: 'relative' }} />
+        </div>{/* end split row */}
+      </div>{/* end chat-app */}
       {callActive && <CallMode user={user} onClose={()=>setCallActive(false)} />}
     </>
   )
-                                }
-                            
+}
