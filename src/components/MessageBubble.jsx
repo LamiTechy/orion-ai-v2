@@ -42,7 +42,6 @@ function addCopyButtons(el) {
   if (window.hljs) el.querySelectorAll('pre code').forEach(el => window.hljs.highlightElement(el))
 }
 
-// ── Parse ALL code blocks — named or unnamed ──────────────────────────────
 function parseCodeFiles(content) {
   const files = []
   const blockRegex = /```(\w+)(?:\s+([^\n]+))?\n([\s\S]*?)```/g
@@ -54,17 +53,14 @@ function parseCodeFiles(content) {
     const code = match[3]
     let filename = null
 
-    // 1. Path after lang tag: ```tsx src/App.tsx
     if (hint && /[./]/.test(hint) && !hint.includes(' ')) {
       filename = hint
     } else {
-      // 2. First-line comment: // src/App.tsx or <!-- index.html -->
       const firstLine = code.split('\n')[0].trim()
       const m = firstLine.match(/^(?:\/\/|#|<!--|--|;|\/\*)\s*([\w][\w.\-/]*\.\w+)\s*(?:-->|\*\/)?$/)
       if (m) filename = m[1]
     }
 
-    // 3. No filename — infer a meaningful name from the code content
     if (!filename) {
       const extMap = {
         javascript: 'js', typescript: 'ts', jsx: 'jsx', tsx: 'tsx',
@@ -76,98 +72,53 @@ function parseCodeFiles(content) {
       }
       const ext = extMap[lang.toLowerCase()] || lang
       const lines = code.split('\n').slice(0, 20).join('\n')
-
-      // Try to extract a meaningful name from the code itself
       let inferredName = null
 
-      // HTML — look for <title>
       if (ext === 'html') {
         const t = code.match(/<title[^>]*>([^<]{1,40})<\/title>/i)
         if (t) inferredName = t[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html'
         else inferredName = 'index.html'
-      }
-
-      // CSS/SCSS — look for a body/root selector or :root to guess it's a main stylesheet
-      else if (ext === 'css' || ext === 'scss') {
+      } else if (ext === 'css' || ext === 'scss') {
         if (/(?:body|:root|html)\s*\{/.test(code)) inferredName = 'styles.' + ext
         else {
-          // Try to find a BEM block or component name from first selector
           const sel = code.match(/^\s*\.([a-z][a-z0-9-]+)[\s{,]/m)
-          if (sel) inferredName = sel[1] + '.' + ext
-          else inferredName = 'styles.' + ext
+          inferredName = sel ? sel[1] + '.' + ext : 'styles.' + ext
         }
-      }
-
-      // JavaScript/TypeScript — look for class name, export default, or function name
-      else if (['js','ts','jsx','tsx'].includes(ext)) {
-        // React component: export default function ComponentName or export default class
+      } else if (['js','ts','jsx','tsx'].includes(ext)) {
         const comp = lines.match(/export\s+default\s+(?:function|class)\s+([A-Z][a-zA-Z0-9]+)/)
         if (comp) inferredName = comp[1] + '.' + ext
-        // Named export: export function name or export const name
         else {
           const named = lines.match(/export\s+(?:function|const|class)\s+([A-Z][a-zA-Z0-9]+)/)
           if (named) inferredName = named[1] + '.' + ext
-          else {
-            // package.json type scripts
-            const req = lines.match(/require\(['"]\.\/([^'"]+)['"]\)/)
-            if (req) inferredName = 'index.' + ext
-            // module.exports
-            else if (/module\.exports/.test(lines)) inferredName = 'index.' + ext
-            // app entry patterns
-            else if (/(?:app\.listen|createServer|ReactDOM\.render|createRoot)/.test(code)) inferredName = 'index.' + ext
-            else {
-              unnamedCount++
-              inferredName = unnamedCount === 1 ? 'index.' + ext : `module${unnamedCount}.` + ext
-            }
-          }
+          else if (/(?:app\.listen|createServer|ReactDOM\.render|createRoot)/.test(code)) inferredName = 'index.' + ext
+          else { unnamedCount++; inferredName = unnamedCount === 1 ? 'index.' + ext : `module${unnamedCount}.` + ext }
         }
-      }
-
-      // Python — look for class name or if __name__ == '__main__'
-      else if (ext === 'py') {
+      } else if (ext === 'py') {
         if (/__name__\s*==\s*['"]__main__['"]/.test(code)) inferredName = 'main.py'
         else {
           const cls = lines.match(/^class\s+([A-Z][a-zA-Z0-9]+)/m)
           if (cls) inferredName = cls[1].toLowerCase() + '.py'
-          else {
-            const fn = lines.match(/^def\s+([a-z][a-z0-9_]+)/m)
-            inferredName = fn ? fn[1] + '.py' : 'main.py'
-          }
+          else { const fn = lines.match(/^def\s+([a-z][a-z0-9_]+)/m); inferredName = fn ? fn[1] + '.py' : 'main.py' }
         }
-      }
-
-      // JSON — look for "name" field (package.json pattern)
-      else if (ext === 'json') {
+      } else if (ext === 'json') {
         if (/"name"\s*:/.test(lines) && /"version"\s*:/.test(lines)) inferredName = 'package.json'
         else if (/"compilerOptions"/.test(lines)) inferredName = 'tsconfig.json'
-        else if (/"extends"/.test(lines) && /"rules"/.test(lines)) inferredName = '.eslintrc.json'
         else inferredName = 'config.json'
-      }
-
-      // Shell
-      else if (ext === 'sh') {
+      } else if (ext === 'sh') {
         if (/npm install|yarn add|pip install/.test(code)) inferredName = 'setup.sh'
         else if (/docker/.test(code)) inferredName = 'docker.sh'
         else inferredName = 'run.sh'
-      }
-
-      // SQL
-      else if (ext === 'sql') {
+      } else if (ext === 'sql') {
         if (/CREATE TABLE/i.test(code)) inferredName = 'schema.sql'
         else if (/INSERT INTO/i.test(code)) inferredName = 'seed.sql'
         else inferredName = 'query.sql'
-      }
-
-      // Fallback
-      else {
+      } else {
         unnamedCount++
         inferredName = unnamedCount === 1 ? `index.${ext}` : `file${unnamedCount}.${ext}`
       }
-
       filename = inferredName
     }
 
-    // Skip tiny snippets under 3 lines — they're just inline examples
     if (code.trim().split('\n').length >= 3) {
       files.push({ path: filename, content: code.trimEnd(), lang })
     }
@@ -175,25 +126,188 @@ function parseCodeFiles(content) {
   return files
 }
 
-// Show ZIP when 2+ code blocks are present (each has enough content)
 function shouldShowZip(files) {
   if (files.length < 2) return false
-  // Make sure total content is substantial — not just two 3-line snippets
   const totalLines = files.reduce((sum, f) => sum + f.content.split('\n').length, 0)
   return totalLines >= 15
 }
 
 function deriveProjectName(files) {
-  // Try to find a named file with a folder structure
   const named = files.filter(f => f.path && f.path.includes('/'))
   if (named.length) return named[0].path.split('/')[0]
-  // Try common root names from filenames
   const htmlFile = files.find(f => f.path?.endsWith('.html'))
   if (htmlFile) return htmlFile.path.replace('.html', '')
   return 'orion-project'
 }
 
-// ── ZIP Download button ────────────────────────────────────────────────────
+// ── Detect if code is previewable ─────────────────────────────────────────
+function getPreviewable(files) {
+  // HTML file (with optional CSS/JS companions)
+  const html = files.find(f => f.path?.endsWith('.html') || f.lang === 'html')
+  if (html) return { type: 'html', files }
+  // Single JS/JSX/TSX that looks like a React component
+  const jsx = files.find(f => ['jsx','tsx','js','ts'].includes(f.lang) &&
+    /import\s+React|from\s+['"]react['"]|export\s+default\s+function/.test(f.content))
+  if (jsx) return { type: 'react', files }
+  // Plain CSS only - show as styled preview
+  return null
+}
+
+function buildPreviewHTML(files) {
+  const html = files.find(f => f.path?.endsWith('.html') || f.lang === 'html')
+  const css = files.filter(f => f.lang === 'css' || f.lang === 'scss').map(f => f.content).join('\n')
+  const js = files.filter(f => ['js','ts'].includes(f.lang) && !f.path?.endsWith('.jsx') && !f.path?.endsWith('.tsx')).map(f => f.content).join('\n')
+
+  if (html) {
+    let doc = html.content
+    // Inject companion CSS
+    if (css && !doc.includes('<style>')) {
+      doc = doc.replace('</head>', `<style>${css}</style></head>`)
+    }
+    // Inject companion JS
+    if (js && !doc.includes('<script>')) {
+      doc = doc.replace('</body>', `<script>${js}</script></body>`)
+    }
+    return doc
+  }
+  return null
+}
+
+function buildReactPreviewHTML(jsxFile) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+${jsxFile.content.replace(/^import\s+.*?;?\s*$/gm, '').replace(/export\s+default\s+/, 'const __Component__ = ')}
+
+const __root = ReactDOM.createRoot(document.getElementById('root'));
+__root.render(React.createElement(__Component__));
+</script>
+</body>
+</html>`
+}
+
+// ── Preview Modal ─────────────────────────────────────────────────────────
+function PreviewModal({ files, onClose }) {
+  const iframeRef = useRef(null)
+  const previewable = getPreviewable(files)
+  const [deviceMode, setDeviceMode] = useState('desktop')
+
+  let htmlContent = ''
+  if (previewable?.type === 'html') htmlContent = buildPreviewHTML(files) || ''
+  else if (previewable?.type === 'react') {
+    const jsx = files.find(f => ['jsx','tsx','js','ts'].includes(f.lang))
+    htmlContent = jsx ? buildReactPreviewHTML(jsx) : ''
+  }
+
+  useEffect(() => {
+    if (iframeRef.current && htmlContent) {
+      const doc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document
+      if (doc) { doc.open(); doc.write(htmlContent); doc.close() }
+    }
+  }, [htmlContent, deviceMode])
+
+  const widths = { desktop: '100%', tablet: '768px', mobile: '375px' }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '16px',
+    }}>
+      {/* Toolbar */}
+      <div style={{
+        width: '100%', maxWidth: 1100,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 12,
+      }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {['desktop','tablet','mobile'].map(d => (
+            <button key={d} onClick={() => setDeviceMode(d)} style={{
+              padding: '6px 14px', borderRadius: 100, border: 'none', cursor: 'pointer',
+              background: deviceMode === d ? '#007AFF' : 'rgba(255,255,255,0.15)',
+              color: deviceMode === d ? '#fff' : 'rgba(255,255,255,0.8)',
+              fontSize: '0.78rem', fontWeight: 500, transition: 'all 0.2s',
+            }}>
+              {d === 'desktop' ? '🖥 Desktop' : d === 'tablet' ? '📱 Tablet' : '📱 Mobile'}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem' }}>
+            {previewable?.type === 'react' ? 'React Preview' : 'HTML Preview'}
+          </span>
+          <button onClick={onClose} style={{
+            background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
+            width: 32, height: 32, borderRadius: '50%', cursor: 'pointer',
+            fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>×</button>
+        </div>
+      </div>
+
+      {/* Preview frame */}
+      <div style={{
+        width: '100%', maxWidth: 1100, flex: 1,
+        background: '#fff', borderRadius: 16, overflow: 'hidden',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.4)',
+        display: 'flex', justifyContent: 'center',
+        transition: 'all 0.3s',
+      }}>
+        <iframe
+          ref={iframeRef}
+          title="preview"
+          sandbox="allow-scripts allow-same-origin"
+          style={{
+            width: widths[deviceMode], maxWidth: '100%',
+            height: '100%', border: 'none',
+            transition: 'width 0.3s',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── Preview Button ─────────────────────────────────────────────────────────
+function PreviewButton({ files }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 7,
+          padding: '9px 18px', marginTop: 14, marginRight: 8,
+          background: 'rgba(88,86,214,0.08)', border: '1px solid rgba(88,86,214,0.2)',
+          borderRadius: 100, color: '#5856d6', cursor: 'pointer',
+          fontSize: '0.82rem', fontWeight: 500,
+          fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(88,86,214,0.15)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(88,86,214,0.08)'; e.currentTarget.style.transform = 'translateY(0)' }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Preview
+      </button>
+      {open && <PreviewModal files={files} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+// ── ZIP Button ─────────────────────────────────────────────────────────────
 function ZipButton({ files, projectName }) {
   const [state, setState] = useState('idle')
 
@@ -216,16 +330,12 @@ function ZipButton({ files, projectName }) {
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = `${projectName}.zip`
-      a.click()
+      a.href = blobUrl; a.download = `${projectName}.zip`; a.click()
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000)
-      setState('done')
-      setTimeout(() => setState('idle'), 3000)
+      setState('done'); setTimeout(() => setState('idle'), 3000)
     } catch (err) {
       console.error('ZIP error:', err)
-      setState('error')
-      setTimeout(() => setState('idle'), 3000)
+      setState('error'); setTimeout(() => setState('idle'), 3000)
     }
   }
 
@@ -235,18 +345,15 @@ function ZipButton({ files, projectName }) {
   const border = { idle: 'rgba(0,122,255,0.2)', loading: 'rgba(0,122,255,0.15)', done: 'rgba(52,199,89,0.25)', error: 'rgba(255,59,48,0.2)' }
 
   return (
-    <button
-      onClick={downloadZip}
-      disabled={state === 'loading'}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        padding: '9px 18px', marginTop: 14,
-        background: bg[state], border: `1px solid ${border[state]}`,
-        borderRadius: 100, color: color[state],
-        cursor: state === 'loading' ? 'not-allowed' : 'pointer',
-        fontSize: '0.82rem', fontWeight: 500,
-        fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
-      }}
+    <button onClick={downloadZip} disabled={state === 'loading'} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 8,
+      padding: '9px 18px', marginTop: 14,
+      background: bg[state], border: `1px solid ${border[state]}`,
+      borderRadius: 100, color: color[state],
+      cursor: state === 'loading' ? 'not-allowed' : 'pointer',
+      fontSize: '0.82rem', fontWeight: 500,
+      fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
+    }}
       onMouseEnter={e => { if (state === 'idle') { e.currentTarget.style.background = 'rgba(0,122,255,0.14)'; e.currentTarget.style.transform = 'translateY(-1px)' }}}
       onMouseLeave={e => { e.currentTarget.style.background = bg[state]; e.currentTarget.style.transform = 'translateY(0)' }}
     >
@@ -259,8 +366,7 @@ function ZipButton({ files, projectName }) {
       ) : (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
+          <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
         </svg>
       )}
       {label[state]}
@@ -271,39 +377,28 @@ function ZipButton({ files, projectName }) {
   )
 }
 
-// ── Image download ─────────────────────────────────────────────────────────
 async function downloadImage(imgUrl) {
   try {
     const res = await fetch(imgUrl)
     const blob = await res.blob()
     const blobUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = `orion-${Date.now()}.jpg`
-    a.click()
+    const a = document.createElement('a'); a.href = blobUrl; a.download = `orion-${Date.now()}.jpg`; a.click()
     setTimeout(() => URL.revokeObjectURL(blobUrl), 5000)
   } catch {
-    const a = document.createElement('a')
-    a.href = imgUrl
-    a.download = `orion-${Date.now()}.jpg`
-    a.click()
+    const a = document.createElement('a'); a.href = imgUrl; a.download = `orion-${Date.now()}.jpg`; a.click()
   }
 }
 
 function ImageMessage({ imgUrl, prompt }) {
   return (
     <div>
-      <img src={imgUrl} alt="Generated"
-        style={{ maxWidth: 480, width: '100%', borderRadius: 16, marginBottom: 10, display: 'block', boxShadow: '0 8px 32px rgba(0,0,0,0.1)' }}
-      />
-      <button
-        onClick={() => downloadImage(imgUrl)}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 18px',
-          background: 'rgba(0,122,255,0.08)', border: '1px solid rgba(0,122,255,0.2)',
-          borderRadius: 100, color: '#007AFF', cursor: 'pointer',
-          fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
-        }}
+      <img src={imgUrl} alt="Generated" style={{ maxWidth: 480, width: '100%', borderRadius: 16, marginBottom: 10, display: 'block', boxShadow: '0 8px 32px rgba(0,0,0,0.1)' }} />
+      <button onClick={() => downloadImage(imgUrl)} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 18px',
+        background: 'rgba(0,122,255,0.08)', border: '1px solid rgba(0,122,255,0.2)',
+        borderRadius: 100, color: '#007AFF', cursor: 'pointer',
+        fontSize: '0.82rem', fontWeight: 500, fontFamily: 'DM Sans,sans-serif', transition: 'all 0.2s',
+      }}
         onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,122,255,0.15)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
         onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; e.currentTarget.style.transform = 'translateY(0)' }}
       >
@@ -329,6 +424,7 @@ export default function MessageBubble({ role, content, streaming }) {
     ? parseCodeFiles(content) : []
   const showZip = shouldShowZip(codeFiles)
   const projectName = deriveProjectName(codeFiles)
+  const previewable = (!streaming && isAI) ? getPreviewable(codeFiles) : null
 
   useEffect(() => {
     if (!bubbleRef.current || !isAI || streaming || imageMatch || storedImgMatch) return
@@ -347,8 +443,7 @@ export default function MessageBubble({ role, content, streaming }) {
     fontSize: '0.7rem', fontWeight: 600,
     background: isAI ? 'linear-gradient(135deg,rgba(0,122,255,0.15),rgba(88,86,214,0.15))' : 'rgba(0,0,0,0.06)',
     border: isAI ? '1px solid rgba(0,122,255,0.2)' : '1px solid rgba(0,0,0,0.08)',
-    color: isAI ? '#007AFF' : '#4a5568',
-    marginTop: 2,
+    color: isAI ? '#007AFF' : '#4a5568', marginTop: 2,
   }
   const bubbleStyle = {
     padding: '11px 15px', borderRadius: isAI ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
@@ -357,8 +452,7 @@ export default function MessageBubble({ role, content, streaming }) {
     border: isAI ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(0,122,255,0.18)',
     backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
     boxShadow: isAI ? '0 2px 12px rgba(100,120,180,0.08)' : '0 2px 12px rgba(0,122,255,0.06)',
-    whiteSpace: isAI ? undefined : 'pre-wrap',
-    color: '#1a1d23',
+    whiteSpace: isAI ? undefined : 'pre-wrap', color: '#1a1d23',
   }
 
   if (imageMatch) return (
@@ -392,9 +486,12 @@ export default function MessageBubble({ role, content, streaming }) {
   if (isAI) return (
     <div style={wrapStyle}>
       <div style={avatarStyle}>O</div>
-      <div style={{ ...bubbleStyle, padding: showZip ? '11px 15px 15px' : '11px 15px' }} className="bubble" ref={bubbleRef}>
+      <div style={{ ...bubbleStyle, padding: (showZip || previewable) ? '11px 15px 15px' : '11px 15px' }} className="bubble" ref={bubbleRef}>
         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
-        {showZip && <ZipButton files={codeFiles} projectName={projectName} />}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0 }}>
+          {previewable && <PreviewButton files={codeFiles} />}
+          {showZip && <ZipButton files={codeFiles} projectName={projectName} />}
+        </div>
       </div>
     </div>
   )
