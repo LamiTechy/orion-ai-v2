@@ -78,8 +78,10 @@ function parseCodeFiles(content) {
         const t = code.match(/<title[^>]*>([^<]{1,40})<\/title>/i)
         inferredName = t ? t[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html' : 'index.html'
       } else if (ext === 'css' || ext === 'scss') {
-        if (/(?:body|:root|html)\s*\{/.test(code)) inferredName = 'styles.' + ext
-        else { const sel = code.match(/^\s*\.([a-z][a-z0-9-]+)[\s{,]/m); inferredName = sel ? sel[1] + '.' + ext : 'styles.' + ext }
+        // Always name CSS files styles.css unless there are already multiple CSS files
+        const cssCount = files.filter(f => f.lang === 'css' || f.lang === 'scss').length
+        if (cssCount === 0) inferredName = 'styles.' + ext
+        else inferredName = 'styles' + (cssCount + 1) + '.' + ext
       } else if (['js','ts','jsx','tsx'].includes(ext)) {
         const comp = lines.match(/export\s+default\s+(?:function|class)\s+([A-Z][a-zA-Z0-9]+)/)
         if (comp) inferredName = comp[1] + '.' + ext
@@ -120,19 +122,33 @@ function shouldShowZip(files) {
 }
 
 function deriveProjectName(files) {
+  // Use folder prefix if files have path structure
   const named = files.filter(f => f.path && f.path.includes('/'))
   if (named.length) return named[0].path.split('/')[0]
-  const htmlFile = files.find(f => f.path?.endsWith('.html'))
-  if (htmlFile) return htmlFile.path.replace('.html', '')
+  // Extract from HTML title
+  const htmlFile = files.find(f => f.lang === 'html' || f.path?.endsWith('.html'))
+  if (htmlFile) {
+    const title = htmlFile.content.match(/<title[^>]*>([^<]{1,40})<\/title>/i)
+    if (title) return title[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    return htmlFile.path?.replace('.html','') || 'project'
+  }
+  // Extract from React component export
+  const jsFile = files.find(f => ['jsx','tsx','js','ts'].includes(f.lang))
+  if (jsFile) {
+    const comp = jsFile.content.match(/export\s+default\s+(?:function|class)\s+([A-Za-z][a-zA-Z0-9]+)/)
+    if (comp) return comp[1].replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/,'')
+  }
   return 'orion-project'
 }
 
 function getPreviewable(files) {
   const html = files.find(f => f.path?.endsWith('.html') || f.lang === 'html')
   if (html) return { type: 'html' }
-  const jsx = files.find(f => ['jsx','tsx','js','ts'].includes(f.lang) &&
-    /import\s+React|from\s+['"]react['"]|export\s+default\s+function|export\s+default\s+const/.test(f.content))
+  const jsx = files.find(f => ['jsx','tsx'].includes(f.lang))
   if (jsx) return { type: 'react' }
+  const js = files.find(f => ['js','ts'].includes(f.lang) &&
+    /export\s+default\s+function|export\s+default\s+class|React\.createElement|useState|useEffect/.test(f.content))
+  if (js) return { type: 'react' }
   return null
 }
 
@@ -148,23 +164,31 @@ function buildHTMLPreview(files) {
 }
 
 function buildReactPreview(files) {
-  const jsxFile = files.find(f => ['jsx','tsx','js','ts'].includes(f.lang) &&
-    /import\s+React|from\s+['"]react['"]|export\s+default\s+function|export\s+default\s+const/.test(f.content))
-  if (!jsxFile) return null
+  // Find the main entry file (App, index, or first with export default)
+  const jsFiles = files.filter(f => ['jsx','tsx','js','ts'].includes(f.lang))
+  if (!jsFiles.length) return null
+
+  const mainFile = jsFiles.find(f =>
+    /export\s+default\s+function|export\s+default\s+class|export\s+default\s+const/.test(f.content)
+  ) || jsFiles[0]
 
   const cssContent = files.filter(f => f.lang === 'css' || f.lang === 'scss').map(f => f.content).join('\n')
 
-  let code = jsxFile.content
-  // Strip all import statements
-  code = code.replace(/^import\s[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-  code = code.replace(/^import\s+['"][^'"]+['"];?\s*$/gm, '')
-  // Handle exports
-  code = code.replace(/export\s+default\s+function\s+(\w+)/, 'function $1')
-  code = code.replace(/export\s+default\s+class\s+(\w+)/, 'class $1')
-  code = code.replace(/^export\s+(const|function|class|let|var)\s+/gm, '$1 ')
-  code = code.replace(/^export\s+default\s+/gm, '')
+  // Combine all JS files — strip imports, then merge. Main file goes last so it can reference helpers.
+  const otherFiles = jsFiles.filter(f => f !== mainFile)
+  const allCode = [...otherFiles, mainFile].map(f => {
+    let code = f.content
+    code = code.replace(/^import\s[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
+    code = code.replace(/^import\s+['"][^'"]+['"];?\s*$/gm, '')
+    code = code.replace(/export\s+default\s+function\s+(\w+)/, 'function $1')
+    code = code.replace(/export\s+default\s+class\s+(\w+)/, 'class $1')
+    code = code.replace(/^export\s+(const|function|class|let|var)\s+/gm, '$1 ')
+    code = code.replace(/^export\s+default\s+/gm, '')
+    return code
+  }).join('\n\n')
 
-  const nameMatch = jsxFile.content.match(/export\s+default\s+(?:function\s+|class\s+)?(\w+)/)
+  // Find the component to render — look for App, or last export default name
+  const nameMatch = mainFile.content.match(/export\s+default\s+(?:function\s+|class\s+)?(\w+)/)
   const componentName = nameMatch?.[1] || 'App'
 
   return [
@@ -186,7 +210,7 @@ function buildReactPreview(files) {
     '<' + '/script>',
     '<script type="text/babel" data-presets="react,typescript">',
     'const {useState,useEffect,useRef,useCallback,useMemo,useContext,useReducer,createContext}=React;',
-    code,
+    allCode,
     'try{ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(' + componentName + '));}',
     'catch(e){document.getElementById("root").innerHTML="<div style=\'padding:20px;color:red;font-family:monospace\'>Error: "+e.message+"</div>";}',
     '<' + '/script></body></html>',
