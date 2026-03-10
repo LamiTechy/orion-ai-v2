@@ -25,20 +25,25 @@
 }
 
 html {
-  /* Prevent Chrome Android from resizing the viewport when keyboard opens */
   height: -webkit-fill-available;
 }
 
 body {
   min-height: 100vh;
   min-height: -webkit-fill-available;
-  min-height: 100dvh;
-  overflow: hidden;
+  /* overflow is NOT hidden here — landing page needs to scroll */
 }
 
+/* Chat page locks to full viewport — applied via class on #root */
 #root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* When chat is active, lock scroll to the app shell */
+#root.chat-active {
   height: 100vh;
-  height: 100dvh; /* shrinks correctly with keyboard on Android */
+  height: 100dvh;
   overflow: hidden;
 }
 

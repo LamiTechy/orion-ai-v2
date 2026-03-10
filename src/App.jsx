@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -18,6 +19,17 @@ function PublicRoute({ children }) {
 }
 
 export default function App() {
+  const location = useLocation()
+
+  useEffect(() => {
+    const root = document.getElementById('root')
+    if (location.pathname === '/chat') {
+      root?.classList.add('chat-active')
+    } else {
+      root?.classList.remove('chat-active')
+    }
+  }, [location.pathname])
+
   return (
     <Routes>
       <Route path="/" element={<PublicRoute><Landing /></PublicRoute>} />
