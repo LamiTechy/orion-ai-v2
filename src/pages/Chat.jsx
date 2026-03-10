@@ -207,6 +207,41 @@ const CSS = `
     .file-chip { margin-bottom: 8px; }
     .file-chip-name { max-width: 150px; }
     .status-row { padding-top: 4px; }
+
+    /* Preview panel on mobile — slides up as a bottom sheet */
+    .mobile-preview-sheet {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
+      height: 85dvh;
+      background: rgba(250,251,253,0.99);
+      border-radius: 20px 20px 0 0;
+      box-shadow: 0 -8px 48px rgba(0,0,0,0.18);
+      display: flex; flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.32s cubic-bezier(0.32,0.72,0,1);
+      border-top: 1px solid rgba(0,0,0,0.08);
+    }
+    .mobile-preview-sheet.open { transform: translateY(0); }
+    .mobile-preview-drag {
+      width: 36px; height: 4px; border-radius: 2px;
+      background: rgba(0,0,0,0.15); margin: 10px auto 0; flex-shrink: 0;
+    }
+    .mobile-preview-dim {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.3); z-index: 1099;
+      backdrop-filter: blur(2px);
+    }
+    .mobile-preview-dim.open { display: block; }
+  }
+
+  /* Desktop: hide mobile sheet */
+  @media (min-width: 769px) {
+    .mobile-preview-sheet,
+    .mobile-preview-dim { display: none !important; }
+  }
+
+  /* Mobile: hide desktop side panel */
+  @media (max-width: 768px) {
+    .desktop-preview-panel { display: none !important; }
   }
 `
 
@@ -714,12 +749,19 @@ export default function Chat() {
             </div>
           </div>
         </div>
-          {/* Preview panel mounts here */}
-          <div style={{ width: preview ? 'min(52%, 700px)' : 0, flexShrink: 0, overflow: 'hidden', transition: 'width 0.28s cubic-bezier(0.32,0.72,0,1)', position: 'relative' }}>
+          {/* Desktop: side panel */}
+          <div className="desktop-preview-panel" style={{ width: preview ? 'min(52%, 700px)' : 0, flexShrink: 0, overflow: 'hidden', transition: 'width 0.28s cubic-bezier(0.32,0.72,0,1)', position: 'relative' }}>
             {preview && <PreviewPanel files={preview.files} type={preview.type} onClose={() => setPreview(null)} />}
           </div>
         </div>{/* end split row */}
       </div>{/* end chat-app */}
+
+      {/* Mobile: bottom sheet preview */}
+      <div className={'mobile-preview-dim' + (preview ? ' open' : '')} onClick={() => setPreview(null)} />
+      <div className={'mobile-preview-sheet' + (preview ? ' open' : '')}>
+        <div className="mobile-preview-drag" />
+        {preview && <PreviewPanel files={preview.files} type={preview.type} onClose={() => setPreview(null)} />}
+      </div>
       {callActive && <CallMode user={user} onClose={()=>setCallActive(false)} />}
     </>
   )
